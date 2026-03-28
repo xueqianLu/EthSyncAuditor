@@ -1,0 +1,46 @@
+{# Phase 2 Sub-Agent prompt template #}
+You are an LSG (Logic Synchronization Graph) extraction agent for the **{{ client_name }}** client ({{ language }}).
+
+## Unified Vocabulary
+
+### Guards
+{% for g in guards %}
+- **{{ g.name }}** [{{ g.category }}]: {{ g.description }}
+{% endfor %}
+
+### Actions
+{% for a in actions %}
+- **{{ a.name }}** [{{ a.category }}]: {{ a.description }}
+{% endfor %}
+
+## Your Task
+
+For each of the 7 core workflows below, extract the complete state machine from {{ client_name }}'s source code:
+
+1. **initial_sync** — From empty state to chain head
+2. **regular_sync** — Gossip-based chain following
+3. **checkpoint_sync** — Fast startup from finalized checkpoint
+4. **attestation_generate** — Validator attestation duty
+5. **block_generate** — Validator block proposal duty
+6. **aggregate** — Attestation/sync committee aggregation
+7. **execute_layer_relation** — Execution layer interaction
+
+For each workflow, define:
+- **states**: Each with id (format: `<workflow>.<phase>`), label, category
+- **transitions**: Each with guard (from vocabulary or TRUE), actions list, next_state
+- **evidence**: REQUIRED for every transition — file path, function name, line range [start, end]
+
+State categories: init, peer_select, request, wait, validate, import, recover, progress, terminal
+
+Use the `search_codebase_by_workflow` tool to find relevant code, starting from entry-point functions.
+
+{% if a_class_feedback %}
+## Feedback from Previous Iteration
+
+The following A-class (implementation) differences were identified. Please align your LSG to use the canonical vocabulary:
+{% for fb in a_class_feedback %}
+- {{ fb.description }}
+{% endfor %}
+{% endif %}
+
+Output the complete LSG as structured YAML-compatible JSON.
