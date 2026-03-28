@@ -1,16 +1,16 @@
-"""EthAuditor — LangGraph graph definition with mock nodes.
+"""EthAuditor — LangGraph graph definition.
 
 Implements the full topology:
   preprocess → Phase 1 (fan-out sub-agents → main → router) → Phase 2 (fan-out → main → router) → END
 
-All agent nodes are mocks that return placeholder data.
+Agent nodes delegate to the factory functions in ``agents/`` when available,
+falling back to deterministic mock logic when no LLM is configured.
 Conditional edges implement convergence checks and MAX_ITER guards.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import Any
 
 from langgraph.graph import END, StateGraph
@@ -92,176 +92,85 @@ def preprocess_node(state: GlobalState) -> dict[str, Any]:
 
 
 def phase1_sub_agent_node(state: GlobalState) -> dict[str, Any]:
-    """Phase 1 Sub-Agent node (mock).
+    """Phase 1 Sub-Agent node.
 
-    Simulates vocabulary discovery for a single client.
+    Delegates to the agent factory from ``agents.phase1_sub_agent``.
     The client name is passed via state['_client_name'] by Send().
     """
+    from agents.phase1_sub_agent import build_phase1_sub_agent
+
     client_name: str = state.get("_client_name", "unknown")  # type: ignore[arg-type]
     iteration = state.get("phase1_iteration", 1)
     logger.info(
-        "[phase1_sub_agent] client=%s phase=1 iter=%d (mock)",
+        "[phase1_sub_agent] client=%s phase=1 iter=%d",
         client_name,
         iteration,
     )
 
-    report = {
-        "client_name": client_name,
-        "new_guards": [],
-        "new_actions": [],
-    }
-
-    if iteration == 1:
-        report["new_guards"] = [
-            {
-                "name": f"MockGuard_{client_name}",
-                "category": "mock",
-                "description": f"Mock guard discovered in {client_name}",
-            }
-        ]
-        report["new_actions"] = [
-            {
-                "name": f"MockAction_{client_name}",
-                "category": "mock",
-                "description": f"Mock action discovered in {client_name}",
-            }
-        ]
-
-    return {"discovery_reports": [report]}
+    agent_fn = build_phase1_sub_agent(client_name, llm=None)
+    return agent_fn(state)
 
 
 def phase1_main_agent_node(state: GlobalState) -> dict[str, Any]:
-    """Phase 1 Main Agent node (mock).
+    """Phase 1 Main Agent node.
 
+    Delegates to the agent factory from ``agents.phase1_main_agent``.
     Merges discovery reports, computes diff_rate, bumps vocab_version.
     """
+    from agents.phase1_main_agent import build_phase1_main_agent
+
     iteration = state.get("phase1_iteration", 1)
     reports = state.get("discovery_reports", [])
-    existing_guards = list(state.get("guards", []))
-    existing_actions = list(state.get("actions", []))
     logger.info(
-        "[phase1_main_agent] phase=1 iter=%d reports=%d (mock)",
+        "[phase1_main_agent] phase=1 iter=%d reports=%d",
         iteration,
         len(reports),
     )
 
-    new_guards: list[dict] = []
-    new_actions: list[dict] = []
-    existing_guard_names = {g["name"] for g in existing_guards}
-    existing_action_names = {a["name"] for a in existing_actions}
-
-    for report in reports:
-        for g in report.get("new_guards", []):
-            if g["name"] not in existing_guard_names:
-                new_guards.append(g)
-                existing_guard_names.add(g["name"])
-        for a in report.get("new_actions", []):
-            if a["name"] not in existing_action_names:
-                new_actions.append(a)
-                existing_action_names.add(a["name"])
-
-    total_vocab = len(existing_guards) + len(existing_actions) + len(new_guards) + len(new_actions)
-    diff_rate = (len(new_guards) + len(new_actions)) / max(total_vocab, 1)
-
-    logger.info(
-        "[phase1_main_agent] new_guards=%d new_actions=%d diff_rate=%.4f",
-        len(new_guards),
-        len(new_actions),
-        diff_rate,
-    )
-
-    return {
-        "guards": new_guards,
-        "actions": new_actions,
-        "vocab_version": state.get("vocab_version", 0) + 1,
-        "diff_rate": diff_rate,
-        "discovery_reports": [],  # reset for next iteration
-    }
+    agent_fn = build_phase1_main_agent(llm=None)
+    return agent_fn(state)
 
 
 # ── Phase 2 nodes ──────────────────────────────────────────────────────
 
 
 def phase2_sub_agent_node(state: GlobalState) -> dict[str, Any]:
-    """Phase 2 Sub-Agent node (mock).
+    """Phase 2 Sub-Agent node.
 
-    Simulates LSG extraction for a single client.
+    Delegates to the agent factory from ``agents.phase2_sub_agent``.
     """
+    from agents.phase2_sub_agent import build_phase2_sub_agent
+
     client_name: str = state.get("_client_name", "unknown")  # type: ignore[arg-type]
     iteration = state.get("phase2_iteration", 1)
     logger.info(
-        "[phase2_sub_agent] client=%s phase=2 iter=%d (mock)",
+        "[phase2_sub_agent] client=%s phase=2 iter=%d",
         client_name,
         iteration,
     )
 
-    workflows = []
-    for wf_id in WORKFLOW_IDS:
-        workflows.append({
-            "id": wf_id,
-            "name": wf_id.replace("_", " ").title(),
-            "description": f"Mock {wf_id} workflow for {client_name}",
-            "mode": "mock",
-            "initial_state": f"{wf_id}.init",
-            "states": [
-                {
-                    "id": f"{wf_id}.init",
-                    "label": "Init",
-                    "category": "init",
-                    "transitions": [
-                        {
-                            "guard": "TRUE",
-                            "actions": [],
-                            "next_state": f"{wf_id}.done",
-                            "evidence": None,
-                        }
-                    ],
-                },
-                {
-                    "id": f"{wf_id}.done",
-                    "label": "Done",
-                    "category": "terminal",
-                    "transitions": [],
-                },
-            ],
-        })
-
-    lsg = {
-        "version": 1,
-        "client": client_name,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "guards": list(state.get("guards", [])),
-        "actions": list(state.get("actions", [])),
-        "workflows": workflows,
-    }
-
-    return {"client_lsgs": {client_name: lsg}}
+    agent_fn = build_phase2_sub_agent(client_name, llm=None)
+    return agent_fn(state)
 
 
 def phase2_main_agent_node(state: GlobalState) -> dict[str, Any]:
-    """Phase 2 Main Agent node (mock).
+    """Phase 2 Main Agent node.
 
+    Delegates to the agent factory from ``agents.phase2_main_agent``.
     Compares client LSGs, classifies diffs, computes logic_diff_rate.
     """
+    from agents.phase2_main_agent import build_phase2_main_agent
+
     iteration = state.get("phase2_iteration", 1)
     client_lsgs = state.get("client_lsgs", {})
     logger.info(
-        "[phase2_main_agent] phase=2 iter=%d clients=%d (mock)",
+        "[phase2_main_agent] phase=2 iter=%d clients=%d",
         iteration,
         len(client_lsgs),
     )
 
-    diff_report: dict[str, Any] = {
-        "a_class_diffs": [],
-        "b_class_diffs": [],
-        "logic_diff_rate": 0.0,
-    }
-
-    return {
-        "diff_report": diff_report,
-        "logic_diff_rate": 0.0,
-        "a_class_feedback": [],
-    }
+    agent_fn = build_phase2_main_agent(llm=None)
+    return agent_fn(state)
 
 
 # ────────────────────────────────────────────────────────────────────────

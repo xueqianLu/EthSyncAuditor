@@ -16,15 +16,16 @@ from typing import Any
 
 import yaml
 
-from config import CLIENT_NAMES, ITERATIONS_PATH, OUTPUT_PATH
+import config
+from config import CLIENT_NAMES
 
 logger = logging.getLogger(__name__)
 
 
 def write_enriched_spec(state: dict[str, Any]) -> Path:
     """Write the enriched global vocabulary (Phase 1 output)."""
-    OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
-    path = OUTPUT_PATH / "Global_LSG_Spec_Enriched.yaml"
+    config.OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
+    path = config.OUTPUT_PATH / "Global_LSG_Spec_Enriched.yaml"
 
     spec = {
         "version": 1,
@@ -43,12 +44,12 @@ def write_enriched_spec(state: dict[str, Any]) -> Path:
 def write_client_lsg(client_name: str, lsg: dict[str, Any], final: bool = False) -> Path:
     """Write a client's LSG YAML (intermediate or final)."""
     if final:
-        OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
-        path = OUTPUT_PATH / f"LSG_{client_name}_final.yaml"
+        config.OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
+        path = config.OUTPUT_PATH / f"LSG_{client_name}_final.yaml"
     else:
-        ITERATIONS_PATH.mkdir(parents=True, exist_ok=True)
+        config.ITERATIONS_PATH.mkdir(parents=True, exist_ok=True)
         iteration = lsg.get("_iteration", 0)
-        path = ITERATIONS_PATH / f"LSG_{client_name}_iter{iteration}.yaml"
+        path = config.ITERATIONS_PATH / f"LSG_{client_name}_iter{iteration}.yaml"
 
     with open(path, "w", encoding="utf-8") as f:
         yaml.dump(lsg, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
@@ -71,8 +72,8 @@ def write_all_final_lsgs(state: dict[str, Any]) -> list[Path]:
 
 def write_diff_report(state: dict[str, Any]) -> Path:
     """Write the Audit Diff Report (Phase 2 output) as Markdown."""
-    OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
-    path = OUTPUT_PATH / "Audit_Diff_Report.md"
+    config.OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
+    path = config.OUTPUT_PATH / "Audit_Diff_Report.md"
 
     diff_report = state.get("diff_report", {})
     b_diffs = diff_report.get("b_class_diffs", [])

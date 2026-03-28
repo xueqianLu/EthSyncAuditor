@@ -1,0 +1,208 @@
+"""Tests for file_io modules — checkpoint, writer, audit_logger."""
+
+import json
+import os
+import shutil
+import tempfile
+from pathlib import Path
+
+import pytest
+import yaml
+
+import config as _config
+
+
+@pytest.fixture(autouse=True)
+def _use_temp_output(tmp_path, monkeypatch):
+    """Redirect all output paths to a temporary directory."""
+    monkeypatch.setattr(_config, "OUTPUT_PATH", tmp_path / "output")
+    monkeypatch.setattr(_config, "CHECKPOINT_PATH", tmp_path / "output" / "checkpoints")
+    monkeypatch.setattr(_config, "ITERATIONS_PATH", tmp_path / "output" / "iterations")
+    monkeypatch.setattr(_config, "AUDIT_LOG_PATH", tmp_path / "output" / "audit_logs")
+    yield
+
+
+# ── Checkpoint ──────────────────────────────────────────────────────────
+
+class TestCheckpoint:
+    def test_save_and_load(self):
+        from file_io.checkpoint import save_checkpoint, load_checkpoint
+
+        state = {"current_phase": 1, "phase1_iteration": 3, "guards": [{"name": "G1"}]}
+        path = save_checkpoint(state, phase=1, iteration=3)
+        assert path.exists()
+        assert "phase1" in path.name
+
+        loaded = load_checkpoint(1, 3)
+        assert loaded["current_phase"] == 1
+        assert loaded["guards"][0]["name"] == "G1"
+
+    def test_load_nonexistent_raises(self):
+        from file_io.checkpoint import load_checkpoint
+        with pytest.raises(FileNotFoundError):
+            load_checkpoint(99, 99)
+
+    def test_latest_checkpoint_empty(self, tmp_path, monkeypatch):
+        """No checkpoints yet → returns None.
+
+        Uses a dedicated empty directory to avoid interference from other tests.
+        """
+        from file_io.checkpoint import latest_checkpoint
+
+        empty_dir = tmp_path / "empty_ckpts"
+        empty_dir.mkdir()
+        monkeypatch.setattr(_config, "CHECKPOINT_PATH", empty_dir)
+        result = latest_checkpoint()
+        assert result is None
+
+    def test_latest_checkpoint_finds_newest(self):
+        from file_io.checkpoint import save_checkpoint, latest_checkpoint
+
+        save_checkpoint({"phase": 1}, phase=1, iteration=1)
+        save_checkpoint({"phase": 2}, phase=2, iteration=3)
+
+        result = latest_checkpoint()
+        assert result is not None
+        phase, iteration, state = result
+        assert phase == 2
+        assert iteration == 3
+
+    def test_checkpoint_serializes_pydantic(self):
+        from file_io.checkpoint import save_checkpoint, load_checkpoint
+        from state import VocabEntry
+
+        entry = VocabEntry(name="G1", category="net", description="d")
+        state = {"guards": [entry]}
+        save_checkpoint(state, phase=1, iteration=1)
+
+        loaded = load_checkpoint(1, 1)
+        assert loaded["guards"][0]["name"] == "G1"
+
+
+# ── Writer ──────────────────────────────────────────────────────────────
+
+class TestWriter:
+    def test_write_enriched_spec(self):
+        from file_io.writer import write_enriched_spec
+
+        state = {
+            "guards": [{"name": "G1", "category": "net", "description": "test"}],
+            "actions": [{"name": "A1", "category": "block", "description": "test2"}],
+        }
+        path = write_enriched_spec(state)
+        assert path.exists()
+
+        with open(path) as f:
+            data = yaml.safe_load(f)
+        assert data["version"] == 1
+        assert len(data["guards"]) == 1
+        assert len(data["actions"]) == 1
+
+    def test_write_client_lsg_final(self):
+        from file_io.writer import write_client_lsg
+
+        lsg = {"version": 1, "client": "prysm", "workflows": []}
+        path = write_client_lsg("prysm", lsg, final=True)
+        assert "final" in path.name
+        assert path.exists()
+
+    def test_write_client_lsg_iteration(self):
+        from file_io.writer import write_client_lsg
+
+        lsg = {"version": 1, "client": "prysm", "workflows": [], "_iteration": 3}
+        path = write_client_lsg("prysm", lsg, final=False)
+        assert "iter3" in path.name
+
+    def test_write_all_final_lsgs(self):
+        from file_io.writer import write_all_final_lsgs
+
+        client_lsgs = {}
+        for name in _config.CLIENT_NAMES:
+            client_lsgs[name] = {"version": 1, "client": name, "workflows": []}
+
+        state = {"client_lsgs": client_lsgs}
+        paths = write_all_final_lsgs(state)
+        assert len(paths) == 5
+
+    def test_write_diff_report(self):
+        from file_io.writer import write_diff_report
+
+        state = {
+            "diff_report": {
+                "a_class_diffs": [],
+                "b_class_diffs": [
+                    {
+                        "workflow_id": "initial_sync",
+                        "state_id": "s1",
+                        "transition_guard": "G1",
+                        "diff_type": "B",
+                        "description": "Missing in prysm",
+                        "involved_clients": ["prysm"],
+                        "evidence": {},
+                    }
+                ],
+                "logic_diff_rate": 0.1,
+            },
+            "force_stopped": False,
+        }
+        path = write_diff_report(state)
+        assert path.exists()
+        content = path.read_text()
+        assert "initial_sync" in content
+        assert "B-Class" in content
+
+
+# ── Audit Logger ────────────────────────────────────────────────────────
+
+class TestAuditLogger:
+    def test_on_llm_start(self):
+        from file_io.audit_logger import AuditLogCallback
+
+        cb = AuditLogCallback(phase=1, iteration=2, agent_type="sub_prysm")
+        cb.on_llm_start({"model": "test"}, ["test prompt"])
+
+        assert len(cb.paths) == 1
+        path = Path(cb.paths[0])
+        assert path.exists()
+
+        with open(path) as f:
+            data = json.load(f)
+        assert data["event_type"] == "llm_start"
+        assert data["phase"] == 1
+        assert data["iteration"] == 2
+
+    def test_on_llm_end(self):
+        from file_io.audit_logger import AuditLogCallback
+
+        cb = AuditLogCallback(phase=2, iteration=1, agent_type="main")
+        cb.on_llm_end({"text": "response"})
+
+        assert len(cb.paths) == 1
+        path = Path(cb.paths[0])
+        with open(path) as f:
+            data = json.load(f)
+        assert data["event_type"] == "llm_end"
+
+    def test_on_llm_error(self):
+        from file_io.audit_logger import AuditLogCallback
+
+        cb = AuditLogCallback(phase=1, iteration=1, agent_type="test")
+        cb.on_llm_error(RuntimeError("boom"))
+
+        assert len(cb.paths) == 1
+        path = Path(cb.paths[0])
+        with open(path) as f:
+            data = json.load(f)
+        assert data["event_type"] == "llm_error"
+        assert "boom" in data["payload"]["error"]
+
+    def test_filename_format(self):
+        from file_io.audit_logger import AuditLogCallback
+
+        cb = AuditLogCallback(phase=2, iteration=5, agent_type="sub_teku")
+        cb.on_llm_start({}, [])
+
+        path = Path(cb.paths[0])
+        assert "phase2" in path.name
+        assert "iter5" in path.name
+        assert "sub_teku" in path.name

@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from config import CHECKPOINT_PATH
+import config
 from utils import safe_serialize
 
 logger = logging.getLogger(__name__)
@@ -21,9 +21,9 @@ def save_checkpoint(state: dict[str, Any], phase: int, iteration: int) -> Path:
 
     Returns the path of the written file.
     """
-    CHECKPOINT_PATH.mkdir(parents=True, exist_ok=True)
+    config.CHECKPOINT_PATH.mkdir(parents=True, exist_ok=True)
     filename = f"checkpoint_phase{phase}_iter{iteration}.json"
-    path = CHECKPOINT_PATH / filename
+    path = config.CHECKPOINT_PATH / filename
 
     # Make state JSON-serializable (drop non-serializable objects)
     serializable = safe_serialize(state)
@@ -40,7 +40,7 @@ def load_checkpoint(phase: int, iteration: int) -> dict[str, Any]:
     Raises FileNotFoundError if the checkpoint does not exist.
     """
     filename = f"checkpoint_phase{phase}_iter{iteration}.json"
-    path = CHECKPOINT_PATH / filename
+    path = config.CHECKPOINT_PATH / filename
     if not path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {path}")
 
@@ -56,8 +56,8 @@ def latest_checkpoint() -> tuple[int, int, dict[str, Any]] | None:
 
     Returns (phase, iteration, state) or None if no checkpoints exist.
     """
-    CHECKPOINT_PATH.mkdir(parents=True, exist_ok=True)
-    checkpoints = sorted(CHECKPOINT_PATH.glob("checkpoint_phase*_iter*.json"))
+    config.CHECKPOINT_PATH.mkdir(parents=True, exist_ok=True)
+    checkpoints = sorted(config.CHECKPOINT_PATH.glob("checkpoint_phase*_iter*.json"))
     if not checkpoints:
         return None
 

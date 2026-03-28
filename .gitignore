@@ -34,3 +34,6 @@ code/
 
 # Chroma DB
 *_chroma/
+
+# Test artifacts
+.pytest_cache/

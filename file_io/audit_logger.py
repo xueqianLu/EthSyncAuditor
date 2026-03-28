@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from config import AUDIT_LOG_PATH
+import config
 from utils import safe_serialize
 
 logger = logging.getLogger(__name__)
@@ -75,13 +75,13 @@ class AuditLogCallback:
     # ── Internal ────────────────────────────────────────────────────────
 
     def _save_event(self, event_type: str, payload: dict[str, Any]) -> None:
-        AUDIT_LOG_PATH.mkdir(parents=True, exist_ok=True)
+        config.AUDIT_LOG_PATH.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%f")
         filename = (
             f"audit_phase{self.phase}_iter{self.iteration}"
             f"_{self.agent_type}_{ts}.json"
         )
-        path = AUDIT_LOG_PATH / filename
+        path = config.AUDIT_LOG_PATH / filename
 
         record = {
             "event_type": event_type,
