@@ -73,5 +73,7 @@ EMBEDDING_MODELS: list[str] = [
     "all-MiniLM-L6-v2",
 ]
 
-# ── LLM model name ─────────────────────────────────────────────────────
+# ── LLM provider & model names ──────────────────────────────────────────
+LLM_PROVIDER: str = "anthropic"  # "anthropic" or "gemini"
 LLM_MODEL: str = "claude-sonnet-4-20250514"
+GEMINI_MODEL: str = "gemini-2.5-flash"

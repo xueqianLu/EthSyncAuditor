@@ -61,3 +61,14 @@ def test_paths_are_path_objects():
     assert isinstance(config.OUTPUT_PATH, Path)
     assert isinstance(config.PREPROCESS_PATH, Path)
     assert isinstance(config.SPEC_PATH, Path)
+
+
+def test_llm_provider():
+    """LLM_PROVIDER is a valid provider string."""
+    assert config.LLM_PROVIDER in ("anthropic", "gemini")
+
+
+def test_llm_model_names():
+    """LLM_MODEL and GEMINI_MODEL are non-empty strings."""
+    assert isinstance(config.LLM_MODEL, str) and len(config.LLM_MODEL) > 0
+    assert isinstance(config.GEMINI_MODEL, str) and len(config.GEMINI_MODEL) > 0

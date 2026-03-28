@@ -1,9 +1,11 @@
 """EthAuditor — main entry point.
 
 Usage:
-    python main.py          # Run with LLM (requires ANTHROPIC_API_KEY)
-    python main.py --mock   # Run with mock agents (no LLM calls)
-    python main.py --resume # Resume from latest checkpoint
+    python main.py                      # Run with default provider (requires API key)
+    python main.py --mock               # Run with mock agents (no LLM calls)
+    python main.py --provider gemini    # Use Gemini (requires GOOGLE_API_KEY)
+    python main.py --provider anthropic # Use Anthropic (requires ANTHROPIC_API_KEY)
+    python main.py --resume             # Resume from latest checkpoint
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ import logging
 import sys
 from typing import Any
 
-from config import LLM_MODEL, OUTPUT_PATH
+from config import GEMINI_MODEL, LLM_MODEL, LLM_PROVIDER, OUTPUT_PATH
 from file_io.checkpoint import latest_checkpoint, save_checkpoint
 from file_io.writer import (
     write_all_final_lsgs,
@@ -29,26 +31,45 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _init_llm(model_name: str, callbacks: list[Any] | None = None) -> Any:
-    """Attempt to initialize an Anthropic LLM.
+def _init_llm(model_name: str, callbacks: list[Any] | None = None,
+              provider: str = "anthropic") -> Any:
+    """Attempt to initialize an LLM for the given *provider*.
+
+    Supported providers: ``"anthropic"`` and ``"gemini"``.
 
     Returns ``None`` if the required package or API key is not available,
     so the caller can fall back to mock mode gracefully.
     """
+    import os
+
+    if provider == "gemini":
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI  # type: ignore[import-untyped]
+        except ImportError:
+            logger.warning("langchain-google-genai not installed — falling back to mock mode")
+            return None
+
+        if not os.environ.get("GOOGLE_API_KEY"):
+            logger.warning("GOOGLE_API_KEY not set — falling back to mock mode")
+            return None
+
+        llm = ChatGoogleGenerativeAI(model=model_name, callbacks=callbacks or [])
+        logger.info("Initialized Gemini LLM: %s", model_name)
+        return llm
+
+    # Default: Anthropic
     try:
         from langchain_anthropic import ChatAnthropic  # type: ignore[import-untyped]
     except ImportError:
         logger.warning("langchain-anthropic not installed — falling back to mock mode")
         return None
 
-    import os
-
     if not os.environ.get("ANTHROPIC_API_KEY"):
         logger.warning("ANTHROPIC_API_KEY not set — falling back to mock mode")
         return None
 
     llm = ChatAnthropic(model=model_name, callbacks=callbacks or [])
-    logger.info("Initialized LLM: %s", model_name)
+    logger.info("Initialized Anthropic LLM: %s", model_name)
     return llm
 
 
@@ -56,14 +77,23 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="EthAuditor — LSG extraction & comparison")
     parser.add_argument("--mock", action="store_true", help="Run with mock agents (no LLM)")
     parser.add_argument(
+        "--provider",
+        choices=["anthropic", "gemini"],
+        default=None,
+        help="LLM provider (default: config.LLM_PROVIDER)",
+    )
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="Resume from the latest checkpoint",
     )
     args = parser.parse_args()
 
+    provider = args.provider or LLM_PROVIDER
+
     logger.info("=" * 60)
-    logger.info("EthAuditor starting (mock=%s, resume=%s)", args.mock, args.resume)
+    logger.info("EthAuditor starting (mock=%s, provider=%s, resume=%s)",
+                args.mock, provider, args.resume)
     logger.info("=" * 60)
 
     # Ensure output dirs exist
@@ -81,7 +111,8 @@ def main() -> None:
     llm = None
     use_mock = args.mock
     if not use_mock:
-        llm = _init_llm(LLM_MODEL, callbacks=callbacks)
+        model_name = GEMINI_MODEL if provider == "gemini" else LLM_MODEL
+        llm = _init_llm(model_name, callbacks=callbacks, provider=provider)
         if llm is None:
             logger.warning("Could not initialize LLM — switching to mock mode")
             use_mock = True

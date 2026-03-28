@@ -123,9 +123,24 @@ class TestResumeFromCheckpoint:
 class TestInitLlm:
     """Test _init_llm graceful degradation."""
 
-    def test_no_api_key_returns_none(self, monkeypatch):
-        """Without ANTHROPIC_API_KEY, _init_llm returns None."""
+    def test_no_anthropic_api_key_returns_none(self, monkeypatch):
+        """Without ANTHROPIC_API_KEY, _init_llm returns None for anthropic."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         from main import _init_llm
+        result = _init_llm("claude-sonnet-4-20250514", provider="anthropic")
+        assert result is None
+
+    def test_no_google_api_key_returns_none(self, monkeypatch):
+        """Without GOOGLE_API_KEY, _init_llm returns None for gemini."""
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        from main import _init_llm
+        result = _init_llm("gemini-2.5-flash", provider="gemini")
+        assert result is None
+
+    def test_default_provider_is_anthropic(self, monkeypatch):
+        """Default provider falls back to anthropic behavior."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        from main import _init_llm
+        # Without ANTHROPIC_API_KEY, default provider (anthropic) returns None
         result = _init_llm("claude-sonnet-4-20250514")
         assert result is None
