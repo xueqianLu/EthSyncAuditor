@@ -14,6 +14,7 @@ from typing import Any
 from uuid import UUID
 
 from config import AUDIT_LOG_PATH
+from utils import safe_serialize
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class AuditLogCallback:
     ) -> None:
         """Called before an LLM call."""
         self._save_event("llm_start", {
-            "serialized": _safe_serialize(serialized),
+            "serialized": safe_serialize(serialized),
             "prompts": prompts,
         })
 
@@ -56,7 +57,7 @@ class AuditLogCallback:
     ) -> None:
         """Called after an LLM call."""
         self._save_event("llm_end", {
-            "response": _safe_serialize(response),
+            "response": safe_serialize(response),
         })
 
     def on_llm_error(
@@ -100,18 +101,3 @@ class AuditLogCallback:
     @property
     def paths(self) -> list[str]:
         return list(self._paths)
-
-
-def _safe_serialize(obj: Any) -> Any:
-    """Make an object JSON-serializable."""
-    if isinstance(obj, dict):
-        return {k: _safe_serialize(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_safe_serialize(item) for item in obj]
-    if isinstance(obj, (str, int, float, bool)) or obj is None:
-        return obj
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump()
-    if hasattr(obj, "__dict__"):
-        return {k: _safe_serialize(v) for k, v in obj.__dict__.items() if not k.startswith("_")}
-    return str(obj)

@@ -31,6 +31,9 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
+# Maximum recursion depth for AST traversal
+MAX_AST_RECURSION_DEPTH: int = 100
+
 
 # ────────────────────────────────────────────────────────────────────────
 # Data classes
@@ -167,7 +170,7 @@ def _find_name_node(node, name_field: str):
 def _extract_calls(node, call_types: list[str], depth: int = 0) -> list[str]:
     """Walk the AST to collect callee names from call expressions."""
     calls: list[str] = []
-    if depth > 100:
+    if depth > MAX_AST_RECURSION_DEPTH:
         return calls
     if node.type in call_types:
         # Try to get function name from first named child
@@ -199,8 +202,8 @@ def _walk_functions(node, func_types: list[str], name_field: str, call_types: li
         # Build qualified name: for Go methods, prepend receiver
         qualified = fn_name
         if node.type == "method_declaration":
-            for child in node.children:
-                if child.type == "parameter_list" and child == node.children[1]:
+            for idx, child in enumerate(node.children):
+                if child.type == "parameter_list" and idx == 1:
                     receiver_text = child.text.decode("utf-8", errors="replace")
                     qualified = f"({receiver_text}).{fn_name}"
                     break

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from config import CHECKPOINT_PATH
+from utils import safe_serialize
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ def save_checkpoint(state: dict[str, Any], phase: int, iteration: int) -> Path:
     path = CHECKPOINT_PATH / filename
 
     # Make state JSON-serializable (drop non-serializable objects)
-    serializable = _make_serializable(state)
+    serializable = safe_serialize(state)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(serializable, f, indent=2, ensure_ascii=False)
 
@@ -69,16 +70,3 @@ def latest_checkpoint() -> tuple[int, int, dict[str, Any]] | None:
 
     state = load_checkpoint(phase, iteration)
     return phase, iteration, state
-
-
-def _make_serializable(obj: Any) -> Any:
-    """Recursively convert an object to JSON-serializable form."""
-    if isinstance(obj, dict):
-        return {k: _make_serializable(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_make_serializable(item) for item in obj]
-    if isinstance(obj, (str, int, float, bool)) or obj is None:
-        return obj
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump()
-    return str(obj)

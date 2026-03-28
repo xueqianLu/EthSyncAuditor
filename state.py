@@ -6,7 +6,7 @@ that the data‑flow contract is explicit.
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, TypedDict
 
 from pydantic import BaseModel, Field
 
@@ -160,8 +160,6 @@ def _merge_dicts(existing: dict, new: dict) -> dict:
 # ────────────────────────────────────────────────────────────────────────
 # GlobalState — the single source of truth flowing through the graph
 # ────────────────────────────────────────────────────────────────────────
-
-from typing import TypedDict  # noqa: E402
 
 
 class GlobalState(TypedDict, total=False):

@@ -54,6 +54,8 @@ def _load_bm25(client_name: str) -> dict | None:
     if not path.exists():
         logger.warning("BM25 index not found: %s", path)
         return None
+    # Safe to use pickle.load here: the BM25 index is only written by our own
+    # preprocessing pipeline (_build_bm25_index) and never from external sources.
     with open(path, "rb") as f:
         data = pickle.load(f)  # noqa: S301
     _bm25_cache[client_name] = data
