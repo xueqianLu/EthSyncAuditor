@@ -6,6 +6,9 @@ Implements the full topology:
 Agent nodes delegate to the factory functions in ``agents/`` when available,
 falling back to deterministic mock logic when no LLM is configured.
 Conditional edges implement convergence checks and MAX_ITER guards.
+
+Use :func:`configure_graph` to set the LLM and mock/live mode before
+calling :func:`compile_graph`.
 """
 
 from __future__ import annotations
@@ -24,6 +27,47 @@ from config import (
 from state import GlobalState
 
 logger = logging.getLogger(__name__)
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Graph-level configuration (set before compile_graph)
+# ────────────────────────────────────────────────────────────────────────
+
+_graph_config: dict[str, Any] = {
+    "llm": None,
+    "mock": True,
+    "callbacks": None,
+}
+
+
+def configure_graph(
+    *,
+    llm: Any = None,
+    mock: bool = True,
+    callbacks: list[Any] | None = None,
+) -> None:
+    """Configure graph-wide settings before compilation.
+
+    Parameters
+    ----------
+    llm:
+        A LangChain-compatible LLM instance.  When provided (and *mock* is
+        ``False``), agent nodes will invoke the LLM for real inference.
+    mock:
+        If ``True`` (default), all agent nodes use deterministic mock
+        implementations — no LLM calls are made.
+    callbacks:
+        Optional list of LangChain callback handlers (e.g.
+        :class:`AuditLogCallback`) to attach to every LLM invocation.
+    """
+    _graph_config["llm"] = llm
+    _graph_config["mock"] = mock
+    _graph_config["callbacks"] = callbacks
+
+
+def get_graph_config() -> dict[str, Any]:
+    """Return a *copy* of the current graph configuration."""
+    return dict(_graph_config)
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -61,24 +105,34 @@ def make_initial_state() -> dict[str, Any]:
 
 
 def preprocess_node(state: GlobalState) -> dict[str, Any]:
-    """Offline preprocessing node (mock).
+    """Offline preprocessing node.
 
-    Checks whether preprocessing products exist; if so, skips.
+    In **live** mode, delegates to
+    :func:`tools.preprocessor.run_all_preprocessing` to run AST parsing,
+    call-graph construction, vector-index and BM25-index builds.
+
+    In **mock** mode (default), marks all clients as ready immediately.
     """
     logger.info("[preprocess_node] phase=0 — checking preprocessing status")
     if state.get("preprocess_done"):
         logger.info("[preprocess_node] Preprocessing already done — skipping.")
         return {}
 
-    statuses: dict[str, dict] = {}
-    for client in CLIENT_NAMES:
-        logger.info("[preprocess_node] Processing client=%s (mock)", client)
-        statuses[client] = {
-            "symbols_ready": True,
-            "callgraph_ready": True,
-            "vector_index_ready": True,
-            "bm25_index_ready": True,
-        }
+    if not _graph_config["mock"]:
+        from tools.preprocessor import run_all_preprocessing
+
+        logger.info("[preprocess_node] Running real preprocessing pipeline …")
+        statuses = run_all_preprocessing(force_rebuild=False)
+    else:
+        statuses: dict[str, dict] = {}
+        for client in CLIENT_NAMES:
+            logger.info("[preprocess_node] Processing client=%s (mock)", client)
+            statuses[client] = {
+                "symbols_ready": True,
+                "callgraph_ready": True,
+                "vector_index_ready": True,
+                "bm25_index_ready": True,
+            }
 
     return {
         "preprocess_done": True,
@@ -89,6 +143,13 @@ def preprocess_node(state: GlobalState) -> dict[str, Any]:
 
 
 # ── Phase 1 nodes ──────────────────────────────────────────────────────
+
+
+def _get_llm() -> Any:
+    """Return the configured LLM, or ``None`` if running in mock mode."""
+    if _graph_config["mock"]:
+        return None
+    return _graph_config["llm"]
 
 
 def phase1_sub_agent_node(state: GlobalState) -> dict[str, Any]:
@@ -107,7 +168,7 @@ def phase1_sub_agent_node(state: GlobalState) -> dict[str, Any]:
         iteration,
     )
 
-    agent_fn = build_phase1_sub_agent(client_name, llm=None)
+    agent_fn = build_phase1_sub_agent(client_name, llm=_get_llm())
     return agent_fn(state)
 
 
@@ -116,8 +177,10 @@ def phase1_main_agent_node(state: GlobalState) -> dict[str, Any]:
 
     Delegates to the agent factory from ``agents.phase1_main_agent``.
     Merges discovery reports, computes diff_rate, bumps vocab_version.
+    Saves a checkpoint after every iteration.
     """
     from agents.phase1_main_agent import build_phase1_main_agent
+    from file_io.checkpoint import save_checkpoint
 
     iteration = state.get("phase1_iteration", 1)
     reports = state.get("discovery_reports", [])
@@ -127,8 +190,17 @@ def phase1_main_agent_node(state: GlobalState) -> dict[str, Any]:
         len(reports),
     )
 
-    agent_fn = build_phase1_main_agent(llm=None)
-    return agent_fn(state)
+    agent_fn = build_phase1_main_agent(llm=_get_llm())
+    result = agent_fn(state)
+
+    # Per-iteration checkpoint
+    merged_state = {**state, **result}
+    try:
+        save_checkpoint(merged_state, phase=1, iteration=iteration)
+    except Exception:
+        logger.warning("[phase1_main_agent] checkpoint save failed", exc_info=True)
+
+    return result
 
 
 # ── Phase 2 nodes ──────────────────────────────────────────────────────
@@ -138,8 +210,10 @@ def phase2_sub_agent_node(state: GlobalState) -> dict[str, Any]:
     """Phase 2 Sub-Agent node.
 
     Delegates to the agent factory from ``agents.phase2_sub_agent``.
+    Writes intermediate LSG YAML after each iteration.
     """
     from agents.phase2_sub_agent import build_phase2_sub_agent
+    from file_io.writer import write_client_lsg
 
     client_name: str = state.get("_client_name", "unknown")  # type: ignore[arg-type]
     iteration = state.get("phase2_iteration", 1)
@@ -149,8 +223,19 @@ def phase2_sub_agent_node(state: GlobalState) -> dict[str, Any]:
         iteration,
     )
 
-    agent_fn = build_phase2_sub_agent(client_name, llm=None)
-    return agent_fn(state)
+    agent_fn = build_phase2_sub_agent(client_name, llm=_get_llm())
+    result = agent_fn(state)
+
+    # Write intermediate LSG YAML for this client+iteration
+    lsg = result.get("client_lsgs", {}).get(client_name)
+    if lsg is not None:
+        try:
+            lsg_with_iter = {**lsg, "_iteration": iteration}
+            write_client_lsg(client_name, lsg_with_iter, final=False)
+        except Exception:
+            logger.warning("[phase2_sub_agent] intermediate LSG write failed", exc_info=True)
+
+    return result
 
 
 def phase2_main_agent_node(state: GlobalState) -> dict[str, Any]:
@@ -158,8 +243,10 @@ def phase2_main_agent_node(state: GlobalState) -> dict[str, Any]:
 
     Delegates to the agent factory from ``agents.phase2_main_agent``.
     Compares client LSGs, classifies diffs, computes logic_diff_rate.
+    Saves a checkpoint after every iteration.
     """
     from agents.phase2_main_agent import build_phase2_main_agent
+    from file_io.checkpoint import save_checkpoint
 
     iteration = state.get("phase2_iteration", 1)
     client_lsgs = state.get("client_lsgs", {})
@@ -169,8 +256,17 @@ def phase2_main_agent_node(state: GlobalState) -> dict[str, Any]:
         len(client_lsgs),
     )
 
-    agent_fn = build_phase2_main_agent(llm=None)
-    return agent_fn(state)
+    agent_fn = build_phase2_main_agent(llm=_get_llm())
+    result = agent_fn(state)
+
+    # Per-iteration checkpoint
+    merged_state = {**state, **result}
+    try:
+        save_checkpoint(merged_state, phase=2, iteration=iteration)
+    except Exception:
+        logger.warning("[phase2_main_agent] checkpoint save failed", exc_info=True)
+
+    return result
 
 
 # ────────────────────────────────────────────────────────────────────────

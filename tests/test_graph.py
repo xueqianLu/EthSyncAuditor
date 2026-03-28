@@ -5,6 +5,8 @@ import config as _config
 from graph import (
     build_graph,
     compile_graph,
+    configure_graph,
+    get_graph_config,
     make_initial_state,
     phase1_sub_agent_node,
     phase1_main_agent_node,
@@ -19,6 +21,7 @@ from graph import (
     phase2_force_stop_node,
     phase1_next_iter_node,
     phase2_next_iter_node,
+    _graph_config,
 )
 
 
@@ -214,17 +217,16 @@ def test_phase2_next_iter_bumps():
 @pytest.mark.timeout(30)
 def test_full_pipeline_converges():
     """Mock pipeline runs preprocess → Phase 1 → Phase 2 and converges."""
+    configure_graph(mock=True)
     app = compile_graph()
     initial = make_initial_state()
-    final = None
-    for step in app.stream(initial, stream_mode="updates"):
-        for _node, update in step.items():
-            if isinstance(update, dict):
-                final = {**(final or {}), **update}
+    final = app.invoke(initial)
 
     assert final is not None
     assert final.get("preprocess_done") is True
     assert final.get("converged_phase2") is True
+    # Verify all 5 clients have LSGs
+    assert len(final.get("client_lsgs", {})) == 5
 
 
 @pytest.mark.timeout(30)
@@ -235,17 +237,123 @@ def test_force_stop_pipeline():
         _config.MAX_ITER_PHASE1 = 1
         _config.CONVERGENCE_THRESHOLD = 0.0  # never converge
 
+        configure_graph(mock=True)
         app = compile_graph()
         initial = make_initial_state()
         initial["diff_rate"] = 1.0
 
-        final = None
-        for step in app.stream(initial, stream_mode="updates"):
-            for _node, update in step.items():
-                if isinstance(update, dict):
-                    final = {**(final or {}), **update}
+        final = app.invoke(initial)
 
         assert final is not None
         assert final.get("force_stopped") is True
     finally:
         _config.MAX_ITER_PHASE1, _config.CONVERGENCE_THRESHOLD = saved
+        configure_graph()
+
+
+# ── configure_graph / get_graph_config ─────────────────────────────────
+
+def test_configure_graph_defaults():
+    """Default config is mock=True, llm=None."""
+    configure_graph()
+    cfg = get_graph_config()
+    assert cfg["mock"] is True
+    assert cfg["llm"] is None
+    assert cfg["callbacks"] is None
+
+
+def test_configure_graph_custom():
+    """configure_graph stores custom settings."""
+    sentinel_llm = object()
+    sentinel_cb = [object()]
+    configure_graph(llm=sentinel_llm, mock=False, callbacks=sentinel_cb)
+    cfg = get_graph_config()
+    assert cfg["llm"] is sentinel_llm
+    assert cfg["mock"] is False
+    assert cfg["callbacks"] is sentinel_cb
+    # Restore defaults
+    configure_graph()
+
+
+def test_get_graph_config_returns_copy():
+    """get_graph_config returns a copy — mutations don't leak."""
+    configure_graph()
+    cfg = get_graph_config()
+    cfg["mock"] = "TAMPERED"
+    assert _graph_config["mock"] is True
+    configure_graph()
+
+
+# ── Preprocess node mock vs live ───────────────────────────────────────
+
+def test_preprocess_node_mock_mode():
+    """In mock mode (default), preprocess_node returns synthetic statuses."""
+    configure_graph(mock=True)
+    state = make_initial_state()
+    result = preprocess_node(state)
+    assert result["preprocess_done"] is True
+    for client in _config.CLIENT_NAMES:
+        assert result["preprocess_status"][client]["symbols_ready"] is True
+    configure_graph()
+
+
+# ── Per-iteration checkpointing ────────────────────────────────────────
+
+def test_phase1_main_saves_checkpoint(tmp_path, monkeypatch):
+    """phase1_main_agent_node writes a per-iteration checkpoint file."""
+    monkeypatch.setattr(_config, "CHECKPOINT_PATH", tmp_path)
+    configure_graph(mock=True)
+
+    state = make_initial_state()
+    state["phase1_iteration"] = 2
+    state["discovery_reports"] = [
+        {"client_name": "prysm", "new_guards": [
+            {"name": "G1", "category": "net", "description": "d"}
+        ], "new_actions": []},
+    ]
+
+    phase1_main_agent_node(state)
+
+    ckpt_files = list(tmp_path.glob("checkpoint_phase1_iter2.json"))
+    assert len(ckpt_files) == 1
+    configure_graph()
+
+
+def test_phase2_main_saves_checkpoint(tmp_path, monkeypatch):
+    """phase2_main_agent_node writes a per-iteration checkpoint file."""
+    monkeypatch.setattr(_config, "CHECKPOINT_PATH", tmp_path)
+    configure_graph(mock=True)
+
+    state = make_initial_state()
+    state["phase2_iteration"] = 3
+    # Build mock LSGs for all clients
+    lsgs = {}
+    for client in _config.CLIENT_NAMES:
+        s = {**state, "_client_name": client}
+        r = phase2_sub_agent_node(s)
+        lsgs.update(r["client_lsgs"])
+    state["client_lsgs"] = lsgs
+
+    phase2_main_agent_node(state)
+
+    ckpt_files = list(tmp_path.glob("checkpoint_phase2_iter3.json"))
+    assert len(ckpt_files) == 1
+    configure_graph()
+
+
+# ── Intermediate LSG writing ───────────────────────────────────────────
+
+def test_phase2_sub_writes_intermediate_lsg(tmp_path, monkeypatch):
+    """phase2_sub_agent_node writes an intermediate LSG YAML."""
+    monkeypatch.setattr(_config, "ITERATIONS_PATH", tmp_path)
+    configure_graph(mock=True)
+
+    state = make_initial_state()
+    state["_client_name"] = "prysm"
+    state["phase2_iteration"] = 4
+
+    phase2_sub_agent_node(state)
+
+    iter_files = list(tmp_path.glob("LSG_prysm_iter4.yaml"))
+    assert len(iter_files) == 1
+    configure_graph()
