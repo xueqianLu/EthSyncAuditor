@@ -1,6 +1,7 @@
 """Integration tests for end-to-end wiring: main.py, configure_graph, resume."""
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -178,3 +179,75 @@ class TestInitLlm:
         from main import _init_llm
         result = _init_llm("gemini-2.5-flash", provider="gemini")
         assert result is None
+
+
+class TestDotenvLoading:
+    """Test that .env file loading works via main.py subprocess."""
+
+    def test_dotenv_sets_env_var(self, tmp_path):
+        """A .env file in the project root is picked up by main.py."""
+        project_root = Path(__file__).resolve().parent.parent
+        dotenv_path = project_root / ".env"
+        # Ensure no leftover .env
+        had_dotenv = dotenv_path.exists()
+        original_content = dotenv_path.read_text() if had_dotenv else None
+
+        sentinel = "TEST_DOTENV_SENTINEL_VALUE_12345"
+        try:
+            dotenv_path.write_text(f"TEST_DOTENV_SENTINEL={sentinel}\n")
+            # Run a tiny Python snippet that imports main (triggering load_dotenv)
+            # then prints the env var.
+            result = subprocess.run(
+                [
+                    sys.executable, "-c",
+                    "import main; import os; print(os.environ.get('TEST_DOTENV_SENTINEL', ''))",
+                ],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                env={k: v for k, v in os.environ.items()
+                     if k != "TEST_DOTENV_SENTINEL"},
+                timeout=10,
+            )
+            assert result.returncode == 0, f"stderr: {result.stderr}"
+            assert sentinel in result.stdout.strip()
+        finally:
+            if original_content is not None:
+                dotenv_path.write_text(original_content)
+            elif dotenv_path.exists():
+                dotenv_path.unlink()
+
+    def test_shell_env_overrides_dotenv(self, tmp_path):
+        """Shell env vars take precedence over .env values."""
+        project_root = Path(__file__).resolve().parent.parent
+        dotenv_path = project_root / ".env"
+        had_dotenv = dotenv_path.exists()
+        original_content = dotenv_path.read_text() if had_dotenv else None
+
+        try:
+            dotenv_path.write_text("TEST_OVERRIDE_VAR=from-dotenv\n")
+            env = {k: v for k, v in os.environ.items()}
+            env["TEST_OVERRIDE_VAR"] = "from-shell"
+            result = subprocess.run(
+                [
+                    sys.executable, "-c",
+                    "import main; import os; print(os.environ.get('TEST_OVERRIDE_VAR', ''))",
+                ],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=10,
+            )
+            assert result.returncode == 0, f"stderr: {result.stderr}"
+            assert "from-shell" in result.stdout.strip()
+        finally:
+            if original_content is not None:
+                dotenv_path.write_text(original_content)
+            elif dotenv_path.exists():
+                dotenv_path.unlink()
+
+    def test_env_example_exists(self):
+        """The .env.example template file exists."""
+        project_root = Path(__file__).resolve().parent.parent
+        assert (project_root / ".env.example").exists()

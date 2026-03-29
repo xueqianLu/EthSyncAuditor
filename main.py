@@ -15,6 +15,12 @@ import logging
 import sys
 from typing import Any
 
+from dotenv import load_dotenv
+
+# Load .env file so users can define all environment variables in one place.
+# Existing env vars take precedence (override=False is the default).
+load_dotenv()
+
 from config import (
     ANTHROPIC_BASE_URL,
     GEMINI_BASE_URL,

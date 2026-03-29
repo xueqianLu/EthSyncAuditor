@@ -73,7 +73,16 @@ bash getcode.sh
 
 ### Environment Variables
 
-Set the API key for your chosen LLM provider:
+EthSyncAuditor supports a **`.env` file** in the project root for convenient
+configuration.  Copy the provided template and fill in the values you need:
+
+```bash
+cp .env.example .env
+# Edit .env with your API keys and optional proxy URLs
+```
+
+Alternatively, export the variables in your shell — shell environment variables
+always take precedence over `.env` values.
 
 ```bash
 # For Anthropic (default)
