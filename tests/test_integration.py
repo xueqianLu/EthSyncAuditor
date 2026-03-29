@@ -144,3 +144,37 @@ class TestInitLlm:
         # Without ANTHROPIC_API_KEY, default provider (anthropic) returns None
         result = _init_llm("claude-sonnet-4-20250514")
         assert result is None
+
+    def test_base_url_param_accepted(self, monkeypatch):
+        """_init_llm accepts base_url without error (key still required)."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        from main import _init_llm
+        # Still returns None (no key), but does not raise
+        result = _init_llm("claude-sonnet-4-20250514", provider="anthropic",
+                           base_url="https://proxy.example.com")
+        assert result is None
+
+    def test_gemini_base_url_param_accepted(self, monkeypatch):
+        """_init_llm accepts base_url for gemini without error."""
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        from main import _init_llm
+        result = _init_llm("gemini-2.5-flash", provider="gemini",
+                           base_url="https://proxy.example.com")
+        assert result is None
+
+    def test_anthropic_env_base_url_fallback(self, monkeypatch):
+        """ANTHROPIC_BASE_URL env var is used when base_url param is empty."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://env-proxy.example.com")
+        from main import _init_llm
+        # Still returns None (no key), but does not raise
+        result = _init_llm("claude-sonnet-4-20250514", provider="anthropic")
+        assert result is None
+
+    def test_gemini_env_base_url_fallback(self, monkeypatch):
+        """GOOGLE_API_BASE env var is used when base_url param is empty."""
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        monkeypatch.setenv("GOOGLE_API_BASE", "https://env-proxy.example.com")
+        from main import _init_llm
+        result = _init_llm("gemini-2.5-flash", provider="gemini")
+        assert result is None

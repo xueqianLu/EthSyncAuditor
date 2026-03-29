@@ -15,7 +15,14 @@ import logging
 import sys
 from typing import Any
 
-from config import GEMINI_MODEL, LLM_MODEL, LLM_PROVIDER, OUTPUT_PATH
+from config import (
+    ANTHROPIC_BASE_URL,
+    GEMINI_BASE_URL,
+    GEMINI_MODEL,
+    LLM_MODEL,
+    LLM_PROVIDER,
+    OUTPUT_PATH,
+)
 from file_io.checkpoint import latest_checkpoint, save_checkpoint
 from file_io.writer import (
     write_all_final_lsgs,
@@ -32,10 +39,24 @@ logger = logging.getLogger(__name__)
 
 
 def _init_llm(model_name: str, callbacks: list[Any] | None = None,
-              provider: str = "anthropic") -> Any:
+              provider: str = "anthropic", base_url: str = "") -> Any:
     """Attempt to initialize an LLM for the given *provider*.
 
     Supported providers: ``"anthropic"`` and ``"gemini"``.
+
+    Parameters
+    ----------
+    model_name:
+        Model identifier to pass to the LLM constructor.
+    callbacks:
+        Optional LangChain callback handlers.
+    provider:
+        ``"anthropic"`` or ``"gemini"``.
+    base_url:
+        Custom API base URL / proxy endpoint.  When non-empty the request
+        is routed through this URL instead of the provider's default.
+        For Anthropic this maps to ``anthropic_api_url``; for Gemini it
+        maps to ``client_options={"api_endpoint": ...}``.
 
     Returns ``None`` if the required package or API key is not available,
     so the caller can fall back to mock mode gracefully.
@@ -53,7 +74,13 @@ def _init_llm(model_name: str, callbacks: list[Any] | None = None,
             logger.warning("GOOGLE_API_KEY not set — falling back to mock mode")
             return None
 
-        llm = ChatGoogleGenerativeAI(model=model_name, callbacks=callbacks or [])
+        kwargs: dict[str, Any] = {"model": model_name, "callbacks": callbacks or []}
+        effective_url = base_url or os.environ.get("GOOGLE_API_BASE", "")
+        if effective_url:
+            kwargs["client_options"] = {"api_endpoint": effective_url}
+            logger.info("Using custom Gemini API endpoint: %s", effective_url)
+
+        llm = ChatGoogleGenerativeAI(**kwargs)
         logger.info("Initialized Gemini LLM: %s", model_name)
         return llm
 
@@ -68,7 +95,13 @@ def _init_llm(model_name: str, callbacks: list[Any] | None = None,
         logger.warning("ANTHROPIC_API_KEY not set — falling back to mock mode")
         return None
 
-    llm = ChatAnthropic(model=model_name, callbacks=callbacks or [])
+    kwargs_a: dict[str, Any] = {"model": model_name, "callbacks": callbacks or []}
+    effective_url = base_url or os.environ.get("ANTHROPIC_BASE_URL", "")
+    if effective_url:
+        kwargs_a["anthropic_api_url"] = effective_url
+        logger.info("Using custom Anthropic API endpoint: %s", effective_url)
+
+    llm = ChatAnthropic(**kwargs_a)
     logger.info("Initialized Anthropic LLM: %s", model_name)
     return llm
 
@@ -86,6 +119,16 @@ def main() -> None:
         "--resume",
         action="store_true",
         help="Resume from the latest checkpoint",
+    )
+    parser.add_argument(
+        "--anthropic-base-url",
+        default=None,
+        help="Custom API base URL for Anthropic (proxy support)",
+    )
+    parser.add_argument(
+        "--gemini-base-url",
+        default=None,
+        help="Custom API base URL for Gemini (proxy support)",
     )
     args = parser.parse_args()
 
@@ -112,7 +155,13 @@ def main() -> None:
     use_mock = args.mock
     if not use_mock:
         model_name = GEMINI_MODEL if provider == "gemini" else LLM_MODEL
-        llm = _init_llm(model_name, callbacks=callbacks, provider=provider)
+        base_url = ""
+        if provider == "gemini":
+            base_url = args.gemini_base_url or GEMINI_BASE_URL
+        else:
+            base_url = args.anthropic_base_url or ANTHROPIC_BASE_URL
+        llm = _init_llm(model_name, callbacks=callbacks, provider=provider,
+                         base_url=base_url)
         if llm is None:
             logger.warning("Could not initialize LLM — switching to mock mode")
             use_mock = True

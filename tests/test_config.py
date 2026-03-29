@@ -72,3 +72,9 @@ def test_llm_model_names():
     """LLM_MODEL and GEMINI_MODEL are non-empty strings."""
     assert isinstance(config.LLM_MODEL, str) and len(config.LLM_MODEL) > 0
     assert isinstance(config.GEMINI_MODEL, str) and len(config.GEMINI_MODEL) > 0
+
+
+def test_proxy_base_urls():
+    """ANTHROPIC_BASE_URL and GEMINI_BASE_URL are strings (empty by default)."""
+    assert isinstance(config.ANTHROPIC_BASE_URL, str)
+    assert isinstance(config.GEMINI_BASE_URL, str)

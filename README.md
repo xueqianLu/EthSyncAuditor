@@ -83,6 +83,24 @@ export ANTHROPIC_API_KEY="your-key-here"
 export GOOGLE_API_KEY="your-key-here"
 ```
 
+#### API Proxy / Custom Endpoints
+
+If you need to route LLM requests through a proxy or custom endpoint, set the
+appropriate base URL via environment variable or CLI flag:
+
+```bash
+# Anthropic proxy (env var or CLI flag)
+export ANTHROPIC_BASE_URL="https://your-proxy.example.com/anthropic"
+python main.py --anthropic-base-url https://your-proxy.example.com/anthropic
+
+# Gemini proxy (env var or CLI flag)
+export GOOGLE_API_BASE="https://your-proxy.example.com/gemini"
+python main.py --gemini-base-url https://your-proxy.example.com/gemini
+```
+
+CLI flags take precedence over config defaults; environment variables are used
+as a final fallback when neither is set.
+
 ## Usage
 
 ```bash
