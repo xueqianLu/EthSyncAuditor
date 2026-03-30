@@ -13,13 +13,15 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from langchain_core.callbacks import BaseCallbackHandler
+
 import config
 from utils import safe_serialize
 
 logger = logging.getLogger(__name__)
 
 
-class AuditLogCallback:
+class AuditLogCallback(BaseCallbackHandler):
     """LangChain-compatible callback handler for audit logging.
 
     Files are written as:

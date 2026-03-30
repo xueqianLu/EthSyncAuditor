@@ -83,8 +83,21 @@ def _init_llm(model_name: str, callbacks: list[Any] | None = None,
         kwargs: dict[str, Any] = {"model": model_name, "callbacks": callbacks or []}
         effective_url = base_url or os.environ.get("GOOGLE_API_BASE", "")
         if effective_url:
-            kwargs["client_options"] = {"api_endpoint": effective_url}
+            kwargs["base_url"] = effective_url
             logger.info("Using custom Gemini API endpoint: %s", effective_url)
+
+        # Forward system proxy settings to httpx via client_args so that the
+        # CONNECT tunnel is established correctly (avoids TLS decode errors
+        # when http_proxy / https_proxy env vars point to a local proxy).
+        proxy_url = (
+            os.environ.get("https_proxy")
+            or os.environ.get("HTTPS_PROXY")
+            or os.environ.get("all_proxy")
+            or os.environ.get("ALL_PROXY")
+        )
+        if proxy_url:
+            kwargs["client_args"] = {"proxy": proxy_url}
+            logger.info("Using proxy for Gemini requests: %s", proxy_url)
 
         llm = ChatGoogleGenerativeAI(**kwargs)
         logger.info("Initialized Gemini LLM: %s", model_name)
