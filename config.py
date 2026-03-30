@@ -76,7 +76,7 @@ EMBEDDING_MODELS: list[str] = [
 # ── LLM provider & model names ──────────────────────────────────────────
 LLM_PROVIDER: str = "anthropic"  # "anthropic" or "gemini"
 LLM_MODEL: str = "claude-sonnet-4-20250514"
-GEMINI_MODEL: str = "gemini-2.5-flash"
+GEMINI_MODEL: str = "gemini-3.1-pro-preview"
 
 # ── API proxy / custom base URLs ────────────────────────────────────────
 # Empty string means "use provider default".  Override via env vars or CLI.

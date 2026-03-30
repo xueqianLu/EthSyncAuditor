@@ -13,6 +13,7 @@ from typing import Any
 from jinja2 import Template
 
 from state import EnrichedSpec, VocabEntry
+from utils import invoke_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,9 @@ def build_phase1_main_agent(llm=None):
             )
             try:
                 chain = llm.with_structured_output(EnrichedSpec)
-                spec: EnrichedSpec = chain.invoke(_prompt)
+                spec: EnrichedSpec = invoke_with_retry(
+                    chain, _prompt, label="phase1_main",
+                )
                 new_guards = [g.model_dump() for g in spec.guards
                               if g.name not in {eg["name"] for eg in existing_guards}]
                 new_actions = [a.model_dump() for a in spec.actions

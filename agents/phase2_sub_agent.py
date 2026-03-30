@@ -15,6 +15,7 @@ from jinja2 import Template
 
 from config import LANGUAGE_GRAMMARS, WORKFLOW_IDS
 from state import LSGFile
+from utils import invoke_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,9 @@ def build_phase2_sub_agent(client_name: str, llm=None):
         if llm is not None:
             try:
                 chain = llm.with_structured_output(LSGFile)
-                lsg: LSGFile = chain.invoke(_prompt)
+                lsg: LSGFile = invoke_with_retry(
+                    chain, _prompt, label=f"phase2_sub/{client_name}",
+                )
                 return {"client_lsgs": {client_name: lsg.model_dump()}}
             except Exception:
                 logger.error("LLM call failed for %s", client_name, exc_info=True)

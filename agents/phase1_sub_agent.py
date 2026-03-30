@@ -14,6 +14,7 @@ from jinja2 import Template
 
 from config import LANGUAGE_GRAMMARS
 from state import VocabDiscoveryReport, VocabEntry
+from utils import invoke_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,9 @@ def build_phase1_sub_agent(client_name: str, llm=None):
         if llm is not None:
             try:
                 chain = llm.with_structured_output(VocabDiscoveryReport)
-                report: VocabDiscoveryReport = chain.invoke(_prompt)
+                report: VocabDiscoveryReport = invoke_with_retry(
+                    chain, _prompt, label=f"phase1_sub/{client_name}",
+                )
                 return {
                     "discovery_reports": [report.model_dump()],
                 }

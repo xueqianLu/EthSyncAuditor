@@ -14,6 +14,7 @@ from jinja2 import Template
 
 from config import CLIENT_NAMES, WORKFLOW_IDS
 from state import DiffItem, DiffReport
+from utils import invoke_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,9 @@ def build_phase2_main_agent(llm=None):
             _prompt = template.render(client_lsgs=client_lsgs)
             try:
                 chain = llm.with_structured_output(DiffReport)
-                report: DiffReport = chain.invoke(_prompt)
+                report: DiffReport = invoke_with_retry(
+                    chain, _prompt, label="phase2_main",
+                )
                 return {
                     "diff_report": report.model_dump(),
                     "logic_diff_rate": report.logic_diff_rate,
