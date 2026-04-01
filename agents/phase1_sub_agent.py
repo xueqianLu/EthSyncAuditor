@@ -25,7 +25,7 @@ def _load_prompt_template() -> Template:
     return Template(_PROMPT_PATH.read_text(encoding="utf-8"))
 
 
-def build_phase1_sub_agent(client_name: str, llm=None):
+def build_phase1_sub_agent(client_name: str, llm=None, callbacks=None):
     """Build a Phase 1 Sub-Agent for *client_name*.
 
     If *llm* is None, returns a mock implementation.
@@ -37,6 +37,7 @@ def build_phase1_sub_agent(client_name: str, llm=None):
         guards = state.get("guards", [])
         actions = state.get("actions", [])
         vocab_version = state.get("vocab_version", 0)
+        iteration = state.get("phase1_iteration", 1)
 
         template = _load_prompt_template()
         _prompt = template.render(
@@ -52,9 +53,12 @@ def build_phase1_sub_agent(client_name: str, llm=None):
                 chain = llm.with_structured_output(VocabDiscoveryReport)
                 report: VocabDiscoveryReport = invoke_with_retry(
                     chain, _prompt, label=f"phase1_sub/{client_name}",
+                    callbacks=callbacks,
                 )
+                report_dict = report.model_dump()
+                report_dict["iteration"] = iteration
                 return {
-                    "discovery_reports": [report.model_dump()],
+                    "discovery_reports": [report_dict],
                 }
             except Exception:
                 logger.error("LLM call failed for %s", client_name, exc_info=True)
@@ -65,6 +69,7 @@ def build_phase1_sub_agent(client_name: str, llm=None):
             "client_name": client_name,
             "new_guards": [],
             "new_actions": [],
+            "iteration": iteration,
         }
         return {"discovery_reports": [report_dict]}
 

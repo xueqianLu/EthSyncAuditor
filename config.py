@@ -82,3 +82,4 @@ GEMINI_MODEL: str = "gemini-3.1-pro-preview"
 # Empty string means "use provider default".  Override via env vars or CLI.
 ANTHROPIC_BASE_URL: str = ""
 GEMINI_BASE_URL: str = ""
+

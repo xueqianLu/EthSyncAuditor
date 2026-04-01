@@ -24,7 +24,7 @@ def _load_prompt_template() -> Template:
     return Template(_PROMPT_PATH.read_text(encoding="utf-8"))
 
 
-def build_phase1_main_agent(llm=None):
+def build_phase1_main_agent(llm=None, callbacks=None):
     """Build the Phase 1 Main Agent.
 
     If *llm* is None, returns a deterministic merge implementation.
@@ -49,6 +49,7 @@ def build_phase1_main_agent(llm=None):
                 chain = llm.with_structured_output(EnrichedSpec)
                 spec: EnrichedSpec = invoke_with_retry(
                     chain, _prompt, label="phase1_main",
+                    callbacks=callbacks,
                 )
                 new_guards = [g.model_dump() for g in spec.guards
                               if g.name not in {eg["name"] for eg in existing_guards}]

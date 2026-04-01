@@ -78,7 +78,10 @@ def _load_callgraph(client_name: str) -> dict | None:
 def _load_chroma(client_name: str):
     """Load a Chroma collection for *client_name*."""
     try:
-        from langchain_community.embeddings import HuggingFaceEmbeddings
+        try:
+            from langchain_huggingface import HuggingFaceEmbeddings
+        except ImportError:
+            from langchain_community.embeddings import HuggingFaceEmbeddings
         from langchain_chroma import Chroma
     except ImportError:
         logger.warning("Chroma/langchain deps not available")

@@ -160,10 +160,12 @@ def _get_parser(language: str):
 
 
 def _find_name_node(node, name_field: str):
-    """Recursively look for a direct child whose type matches *name_field*."""
-    for child in node.children:
-        if child.type == name_field:
-            return child.text.decode("utf-8") if child.text else ""
+    """Extract the name of a function/method node via tree-sitter field API."""
+    # Use child_by_field_name (looks up by grammar field, e.g. "name")
+    # instead of matching child.type which would be "identifier" / "field_identifier".
+    child = node.child_by_field_name(name_field)
+    if child is not None:
+        return child.text.decode("utf-8") if child.text else ""
     return ""
 
 
@@ -202,11 +204,10 @@ def _walk_functions(node, func_types: list[str], name_field: str, call_types: li
         # Build qualified name: for Go methods, prepend receiver
         qualified = fn_name
         if node.type == "method_declaration":
-            for idx, child in enumerate(node.children):
-                if child.type == "parameter_list" and idx == 1:
-                    receiver_text = child.text.decode("utf-8", errors="replace")
-                    qualified = f"({receiver_text}).{fn_name}"
-                    break
+            receiver = node.child_by_field_name("receiver")
+            if receiver is not None:
+                receiver_text = receiver.text.decode("utf-8", errors="replace")
+                qualified = f"({receiver_text}).{fn_name}"
 
         results.append(SymbolInfo(
             file=file_path,
@@ -362,7 +363,10 @@ def _compute_call_depths(callgraph: CallGraph) -> dict[str, tuple[int, list[str]
 def _build_vector_index(client_name: str, symbols: list[SymbolInfo], callgraph: CallGraph) -> None:
     """Task C: Build Chroma vector index with call-graph enhanced metadata."""
     try:
-        from langchain_community.embeddings import HuggingFaceEmbeddings
+        try:
+            from langchain_huggingface import HuggingFaceEmbeddings
+        except ImportError:
+            from langchain_community.embeddings import HuggingFaceEmbeddings
         from langchain_chroma import Chroma
         from langchain_text_splitters import RecursiveCharacterTextSplitter, Language
     except ImportError:

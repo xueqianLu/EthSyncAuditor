@@ -371,6 +371,189 @@ Example transition with evidence:
 Comparison tools MAY ignore `evidence` when comparing high-level structures,
 using it only to backtrack to source code for debugging or further analysis.
 
+### 4.4. Workflow Business Semantics
+
+Below is a detailed description of each reserved workflow's business meaning, the Ethereum
+protocol interactions it involves, the typical guards and actions it uses, and implementation
+hints across the five reference clients. Agents MUST use this as the authoritative reference
+when discovering vocabulary (Phase 1) and extracting state machines (Phase 2).
+
+#### 4.4.1. `initial_sync` — Initial Synchronization
+
+When a beacon node starts for the first time (or after a long offline period), it must download
+blocks from genesis (or from a recent finalized epoch) up to the current chain head. The node
+uses the `BeaconBlocksByRange` RPC (and `BlobSidecarsByRange` post-Deneb) to request large
+batches of sequential blocks from peers selected by their advertised `head_slot`. Requests are
+pipelined across multiple peers for throughput. Each batch is validated (BLS signatures,
+state transitions, consensus rules), applied to the local beacon state, and the fork-choice
+view is advanced. The loop continues until the local head reaches the network target slot,
+at which point the node switches to `regular_sync`.
+
+**Typical guards**: `NewPeerAvailable`, `RespRecv`, `RespInvalid`, `TimeoutExpired`,
+`PeerDisconnected`, `MissingParent`, `ReachedTargetSlot`, `ModeIsInitialSync`,
+`ForkChoiceReject`, `AlreadyKnown`
+
+**Typical actions**: `BuildPeerQueue`, `SelectNextPeer`, `SendRangeRequest`, `ScheduleTimeout`,
+`ValidateBatch`, `ApplyBatch`, `UpdateForkChoice`, `PenalizePeer`, `DisconnectPeer`,
+`UpdateSyncTarget`, `EnterRegularSync`
+
+**Implementation hints**:
+- Prysm (Go): `beacon-chain/sync/initial-sync/` — `blocksFetcher`, FSM in `*Service`.
+- Lighthouse (Rust): `beacon_node/network/src/sync/range_sync/` — `RangeSync`, `SyncingChain`.
+- Grandine (Rust): `fork_choice_control/` — integrated sync manager with range requests.
+- Teku (Java): `beacon/sync/` — `ForwardSync`, `SyncManager`, `PeerSync`.
+- Lodestar (TypeScript): `packages/beacon-node/src/sync/range/` — `RangeSync`, `SyncChain`.
+
+#### 4.4.2. `regular_sync` — Regular (Gossip) Synchronization
+
+After initial sync completes, the node maintains chain head by subscribing to GossipSub
+topics: `beacon_block`, `beacon_attestation` (per-subnet), `beacon_aggregate_and_proof`,
+`voluntary_exit`, `proposer_slashing`, `attester_slashing`, `blob_sidecar` (post-Deneb).
+Every 12-second slot, the node receives a new block via gossip, performs initial validity
+checks (slot, proposer, signature), then runs full consensus validation and imports it.
+Attestations update fork-choice weights. If the node detects it has fallen multiple
+slots/epochs behind, it falls back to range-based `initial_sync`.
+
+**Typical guards**: `GossipRecvBlock`, `GossipRecvAttestation`, `RespRecv`, `RespInvalid`,
+`MissingParent`, `AlreadyKnown`, `ForkChoiceReject`, `TimeoutExpired`, `ModeIsRegularSync`
+
+**Typical actions**: `SubscribeGossip`, `ValidateBlock`, `ApplyBlock`, `UpdateForkChoice`,
+`StoreBlock`, `RequestParents`, `PenalizePeer`, `UpdatePeerScore`, `ScheduleTimeout`
+
+**Implementation hints**:
+- Prysm (Go): `beacon-chain/sync/` — gossip handlers `receiveBlock`, `receiveAttestation`; `blockchain.ReceiveBlock()`.
+- Lighthouse (Rust): `beacon_node/network/src/sync/` — `NetworkBeaconProcessor` dispatches gossip events.
+- Grandine (Rust): `fork_choice_control/` + `eth2_libp2p/` — event loop processing gossip messages.
+- Teku (Java): `networking/eth2/src/main/java/.../gossip/` — handlers feed `BlockImporter`, `AttestationManager`.
+- Lodestar (TypeScript): `packages/beacon-node/src/chain/` — `BeaconChain` gossip event handlers.
+
+#### 4.4.3. `checkpoint_sync` — Checkpoint (Weak Subjectivity) Synchronization
+
+Checkpoint sync lets a node bootstrap quickly without downloading from genesis. The node
+fetches a recent finalized state and block from a trusted source (Beacon API endpoint
+`/eth/v2/debug/beacon/states/finalized` or a bundled checkpoint), verifies the state root
+against a known weak subjectivity checkpoint, and initializes its local beacon state and
+fork-choice from that anchor. It then syncs forward to the current head (via range sync
+or gossip). Optionally, the node *backfills* historical blocks from the checkpoint toward
+genesis using reverse `BeaconBlocksByRange` requests, validating parent-child chain
+integrity without full state transitions.
+
+**Typical guards**: `RespRecv`, `RespInvalid`, `TimeoutExpired`, `ModeIsCheckpointSync`,
+`ReachedTargetSlot`, `MissingParent`, `NewPeerAvailable`
+
+**Typical actions**: `SendCheckpointRequest`, `ValidateBatch`, `ApplyBatch`,
+`UpdateForkChoice`, `SendRangeRequest`, `ScheduleTimeout`, `EnterRegularSync`,
+`UpdateSyncTarget`
+
+**Implementation hints**:
+- Prysm (Go): `beacon-chain/sync/checkpoint/` — `--checkpoint-sync-url` flag; `initialsync` handles forward sync.
+- Lighthouse (Rust): `beacon_node/src/cli.rs` + `beacon_node/network/src/sync/backfill_sync/` — `BackFillSync`.
+- Grandine (Rust): `grandine/src/` — checkpoint initialization path, then standard sync.
+- Teku (Java): `beacon/sync/` — `WeakSubjectivitySync` / `CheckpointSync` init pipeline.
+- Lodestar (TypeScript): `packages/beacon-node/src/sync/` — `--checkpointSyncUrl`, backfill sync.
+
+#### 4.4.4. `attestation_generate` — Attestation (Vote) Generation
+
+Every slot, a subset of validators is assigned attestation duties. Each attesting validator
+queries the beacon node for its committee assignment (`/eth/v1/validator/duties/attester/{epoch}`),
+waits until 1/3 into the slot (4 seconds — the prescribed attestation time), fetches the
+current attestation data (`/eth/v1/validator/attestation_data`) containing source/target
+(Casper FFG) and head (LMD-GHOST) votes, constructs the `Attestation` object with its
+committee bit set, signs it with its BLS private key (after slashing-protection checks to
+avoid conflicting attestations), and publishes the signed attestation to the appropriate
+gossip subnet via the beacon node.
+
+**Typical guards**: `HasAttesterDuty`, `TRUE`, `TimeoutExpired`, `RespRecv`
+
+**Typical actions**: `FetchDuties`, `BuildAttestation`, `SignAttestation`,
+`PublishAttestation`, `ScheduleTimeout`
+
+**Implementation hints**:
+- Prysm (Go): `validator/client/attest.go` — `submitAttestation()`, `createAttestation()`.
+- Lighthouse (Rust): `validator_client/src/attestation_service.rs` — `AttestationService`.
+- Grandine (Rust): validator crate — attestation production in the validator event loop.
+- Teku (Java): `validator/client/src/main/java/.../duties/` — `AttestationProductionDuty`.
+- Lodestar (TypeScript): `packages/validator/src/services/attestation.ts` — `AttestationService`.
+
+#### 4.4.5. `block_generate` — Block Proposal (Production)
+
+Each slot, exactly one validator is the designated block proposer. The proposer queries duties
+(`/eth/v1/validator/duties/proposer/{epoch}`), then at slot start: (1) calls
+`engine_forkchoiceUpdated` with `payloadAttributes` to tell the EL to start building an
+execution payload, (2) calls `engine_getPayload` to retrieve the built execution payload
+(transactions, withdrawals, etc.), (3) assembles the full beacon block body — attestations,
+deposits, proposer/attester slashings, sync committee contributions, the execution payload,
+BLS-to-execution changes, and blob KZG commitments (post-Deneb), (4) signs the block with
+the proposer's BLS key (with slashing protection — never sign two blocks for the same slot),
+and (5) broadcasts the signed block via gossip while importing it locally.
+
+**Typical guards**: `HasProposerDuty`, `TRUE`, `ExecutionValidationSucceeded`,
+`ExecutionValidationFailed`, `TimeoutExpired`, `RespRecv`
+
+**Typical actions**: `FetchDuties`, `TriggerExecutionValidation`, `BuildBlock`,
+`SignBlock`, `PublishBlock`, `ScheduleTimeout`
+
+**Implementation hints**:
+- Prysm (Go): `validator/client/propose.go` — `ProposeBlock()`; beacon-side `proposer.go`.
+- Lighthouse (Rust): `validator_client/src/block_service.rs` — `BlockService`; `beacon_node/execution_layer/`.
+- Grandine (Rust): `block_producer/` — block assembly + EL payload retrieval.
+- Teku (Java): `validator/client/src/.../duties/BlockProductionDuty.java`.
+- Lodestar (TypeScript): `packages/validator/src/services/block.ts` — `BlockProposingService`.
+
+#### 4.4.6. `aggregate` — Attestation Aggregation
+
+For each committee in each slot, one or more validators are selected as *aggregators* via a
+VRF-based check (`is_aggregator()` on the slot signature). The aggregator subscribes to its
+committee's attestation subnet, waits until 2/3 into the slot (8 seconds) to let individual
+attestations propagate, collects them, combines them into a single `AggregateAndProof`
+(bitwise-OR of aggregation bits + BLS signature combination), signs the aggregate, and
+publishes it to the global `beacon_aggregate_and_proof` gossip topic. This reduces the
+volume of individual attestations that block producers must process and include.
+
+**Typical guards**: `SelectedAsAggregator`, `TRUE`, `GossipRecvAttestation`,
+`TimeoutExpired`
+
+**Typical actions**: `SubscribeGossip`, `ComputeAggregate`, `SignAggregate`,
+`PublishAggregate`, `ScheduleTimeout`, `FetchDuties`
+
+**Implementation hints**:
+- Prysm (Go): `validator/client/aggregate.go` — `SubmitAggregateAndProof()`.
+- Lighthouse (Rust): `validator_client/src/attestation_service.rs` — aggregation interleaved with attestation.
+- Grandine (Rust): aggregation pool in the validator event loop.
+- Teku (Java): `validator/client/src/.../duties/AggregationDuty.java`.
+- Lodestar (TypeScript): `packages/validator/src/services/attestation.ts` — combined attestation + aggregation.
+
+#### 4.4.7. `execute_layer_relation` — Execution Layer Interaction
+
+Post-Merge, the CL drives the EL via the Engine API (authenticated JSON-RPC). Key interactions:
+
+1. **Payload validation** — When the CL receives a new block (gossip or sync), it sends the
+   execution payload to the EL via `engine_newPayload`. The EL executes all transactions and
+   returns `VALID`, `INVALID`, `SYNCING`, or `ACCEPTED`.
+2. **Fork-choice update** — After block import, the CL calls `engine_forkchoiceUpdated` with
+   the current head/safe/finalized hashes. This optionally includes `payloadAttributes` to
+   trigger building the next block's execution payload.
+3. **Optimistic sync** — If the EL is still syncing (`SYNCING` status), the CL may import
+   blocks optimistically without full EL validation, marking them as "optimistic". These
+   are retroactively validated when the EL catches up.
+4. **Invalid payload handling** — If the EL returns `INVALID`, the CL must invalidate the
+   block and all its descendants, potentially rolling back the fork-choice head to the last
+   valid ancestor.
+
+**Typical guards**: `ExecutionValidationSucceeded`, `ExecutionValidationFailed`,
+`ExecutionClientSyncing`, `ModeIsOptimistic`, `TimeoutExpired`, `RespRecv`
+
+**Typical actions**: `TriggerExecutionValidation`, `ApplyOptimisticBlock`,
+`MarkPayloadPending`, `MarkPayloadInvalid`, `RollbackToSafeHead`, `UpdateForkChoice`,
+`ScheduleTimeout`
+
+**Implementation hints**:
+- Prysm (Go): `beacon-chain/execution/` — `ExecutionEngine`; `beacon-chain/blockchain/` — `notifyNewPayload()`, `notifyForkchoiceUpdate()`.
+- Lighthouse (Rust): `beacon_node/execution_layer/src/` — `ExecutionLayer`, `notify_new_payload()`, `notify_forkchoice_updated()`.
+- Grandine (Rust): `execution_engine/` — Engine API client; `fork_choice_control/` — EL response integration.
+- Teku (Java): `ethereum/executionlayer/src/` — `ExecutionLayerManager`; `ethereum/statetransition/` — optimistic status.
+- Lodestar (TypeScript): `packages/beacon-node/src/execution/engine/` — `ExecutionEngineHttp`; `packages/beacon-node/src/chain/` — `verifyBlocksExecutionPayload`.
+
 ---
 
 ## 5. Example: Minimal Initial Sync Workflow Skeleton

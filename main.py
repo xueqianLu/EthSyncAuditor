@@ -1,11 +1,14 @@
 """EthAuditor — main entry point.
 
 Usage:
-    python main.py                      # Run with default provider (requires API key)
-    python main.py --mock               # Run with mock agents (no LLM calls)
-    python main.py --provider gemini    # Use Gemini (requires GOOGLE_API_KEY)
-    python main.py --provider anthropic # Use Anthropic (requires ANTHROPIC_API_KEY)
-    python main.py --resume             # Resume from latest checkpoint
+    python main.py                          # Run with default provider (requires API key)
+    python main.py --mock                   # Run with mock agents (no LLM calls)
+    python main.py --provider gemini        # Use Gemini (requires GOOGLE_API_KEY)
+    python main.py --provider anthropic     # Use Anthropic (requires ANTHROPIC_API_KEY)
+    python main.py --resume                 # Resume from latest checkpoint
+    python main.py --resume-from 1:5        # Resume from Phase 1, Iteration 5
+    python main.py --list-checkpoints       # Show all saved checkpoints
+    python main.py --max-iter 3             # Limit both phases to 3 iterations
 """
 
 from __future__ import annotations
@@ -29,7 +32,12 @@ from config import (
     LLM_PROVIDER,
     OUTPUT_PATH,
 )
-from file_io.checkpoint import latest_checkpoint, save_checkpoint
+from file_io.checkpoint import (
+    latest_checkpoint,
+    list_checkpoints,
+    load_checkpoint,
+    save_checkpoint,
+)
 from file_io.writer import (
     write_all_final_lsgs,
     write_diff_report,
@@ -80,7 +88,7 @@ def _init_llm(model_name: str, callbacks: list[Any] | None = None,
             logger.warning("GOOGLE_API_KEY not set — falling back to mock mode")
             return None
 
-        kwargs: dict[str, Any] = {"model": model_name, "callbacks": callbacks or []}
+        kwargs: dict[str, Any] = {"model": model_name}
         effective_url = base_url or os.environ.get("GOOGLE_API_BASE", "")
         if effective_url:
             kwargs["base_url"] = effective_url
@@ -114,7 +122,7 @@ def _init_llm(model_name: str, callbacks: list[Any] | None = None,
         logger.warning("ANTHROPIC_API_KEY not set — falling back to mock mode")
         return None
 
-    kwargs_a: dict[str, Any] = {"model": model_name, "callbacks": callbacks or []}
+    kwargs_a: dict[str, Any] = {"model": model_name}
     effective_url = base_url or os.environ.get("ANTHROPIC_BASE_URL", "")
     if effective_url:
         kwargs_a["anthropic_api_url"] = effective_url
@@ -140,6 +148,35 @@ def main() -> None:
         help="Resume from the latest checkpoint",
     )
     parser.add_argument(
+        "--resume-from",
+        default=None,
+        metavar="PHASE:ITER",
+        help="Resume from a specific checkpoint, e.g. --resume-from 1:5",
+    )
+    parser.add_argument(
+        "--list-checkpoints",
+        action="store_true",
+        help="List all available checkpoints and exit",
+    )
+    parser.add_argument(
+        "--max-iter",
+        type=int,
+        default=None,
+        help="Override MAX_ITER for both phases (e.g. --max-iter 2 for quick test)",
+    )
+    parser.add_argument(
+        "--max-iter-phase1",
+        type=int,
+        default=None,
+        help="Override MAX_ITER_PHASE1 only",
+    )
+    parser.add_argument(
+        "--max-iter-phase2",
+        type=int,
+        default=None,
+        help="Override MAX_ITER_PHASE2 only",
+    )
+    parser.add_argument(
         "--anthropic-base-url",
         default=None,
         help="Custom API base URL for Anthropic (proxy support)",
@@ -151,11 +188,36 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # ── List checkpoints and exit ─────────────────────────────────────
+    if args.list_checkpoints:
+        ckpts = list_checkpoints()
+        if not ckpts:
+            print("No checkpoints found.")
+        else:
+            print(f"{'Phase':<8}{'Iter':<8}{'File'}")
+            print("-" * 60)
+            for phase, iteration, path in ckpts:
+                print(f"{phase:<8}{iteration:<8}{path.name}")
+        sys.exit(0)
+
     provider = args.provider or LLM_PROVIDER
 
+    # ── Apply max-iter overrides ──────────────────────────────────────
+    import config as _cfg
+
+    if args.max_iter is not None:
+        _cfg.MAX_ITER_PHASE1 = args.max_iter
+        _cfg.MAX_ITER_PHASE2 = args.max_iter
+    if args.max_iter_phase1 is not None:
+        _cfg.MAX_ITER_PHASE1 = args.max_iter_phase1
+    if args.max_iter_phase2 is not None:
+        _cfg.MAX_ITER_PHASE2 = args.max_iter_phase2
+
     logger.info("=" * 60)
-    logger.info("EthAuditor starting (mock=%s, provider=%s, resume=%s)",
-                args.mock, provider, args.resume)
+    logger.info("EthAuditor starting (mock=%s, provider=%s, resume=%s, "
+                "max_iter_p1=%d, max_iter_p2=%d)",
+                args.mock, provider, args.resume,
+                _cfg.MAX_ITER_PHASE1, _cfg.MAX_ITER_PHASE2)
     logger.info("=" * 60)
 
     # Ensure output dirs exist
@@ -192,7 +254,22 @@ def main() -> None:
     app = compile_graph()
 
     # ── Initial or resumed state ──────────────────────────────────────
-    if args.resume:
+    if args.resume_from:
+        # Parse "PHASE:ITER" format
+        try:
+            parts = args.resume_from.split(":")
+            r_phase, r_iter = int(parts[0]), int(parts[1])
+        except (ValueError, IndexError):
+            logger.error("Invalid --resume-from format. Use PHASE:ITER, e.g. 1:5")
+            sys.exit(1)
+        try:
+            initial = load_checkpoint(r_phase, r_iter)
+            logger.info("Resuming from checkpoint: phase=%d iter=%d", r_phase, r_iter)
+        except FileNotFoundError as e:
+            logger.error("Checkpoint not found: %s", e)
+            logger.info("Use --list-checkpoints to see available checkpoints")
+            sys.exit(1)
+    elif args.resume:
         ckpt = latest_checkpoint()
         if ckpt is not None:
             phase, iteration, initial = ckpt

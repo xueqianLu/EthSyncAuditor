@@ -96,6 +96,7 @@ def make_initial_state() -> dict[str, Any]:
         "audit_log_paths": [],
         "discovery_reports": [],
         "a_class_feedback": [],
+        "sparsity_hints": [],
     }
 
 
@@ -152,6 +153,11 @@ def _get_llm() -> Any:
     return _graph_config["llm"]
 
 
+def _get_callbacks() -> list[Any] | None:
+    """Return the configured callback handlers, or ``None``."""
+    return _graph_config.get("callbacks") or None
+
+
 def phase1_sub_agent_node(state: GlobalState) -> dict[str, Any]:
     """Phase 1 Sub-Agent node.
 
@@ -168,7 +174,7 @@ def phase1_sub_agent_node(state: GlobalState) -> dict[str, Any]:
         iteration,
     )
 
-    agent_fn = build_phase1_sub_agent(client_name, llm=_get_llm())
+    agent_fn = build_phase1_sub_agent(client_name, llm=_get_llm(), callbacks=_get_callbacks())
     return agent_fn(state)
 
 
@@ -190,7 +196,7 @@ def phase1_main_agent_node(state: GlobalState) -> dict[str, Any]:
         len(reports),
     )
 
-    agent_fn = build_phase1_main_agent(llm=_get_llm())
+    agent_fn = build_phase1_main_agent(llm=_get_llm(), callbacks=_get_callbacks())
     result = agent_fn(state)
 
     # Per-iteration checkpoint
@@ -223,7 +229,7 @@ def phase2_sub_agent_node(state: GlobalState) -> dict[str, Any]:
         iteration,
     )
 
-    agent_fn = build_phase2_sub_agent(client_name, llm=_get_llm())
+    agent_fn = build_phase2_sub_agent(client_name, llm=_get_llm(), callbacks=_get_callbacks())
     result = agent_fn(state)
 
     # Write intermediate LSG YAML for this client+iteration
@@ -256,7 +262,7 @@ def phase2_main_agent_node(state: GlobalState) -> dict[str, Any]:
         len(client_lsgs),
     )
 
-    agent_fn = build_phase2_main_agent(llm=_get_llm())
+    agent_fn = build_phase2_main_agent(llm=_get_llm(), callbacks=_get_callbacks())
     result = agent_fn(state)
 
     # Per-iteration checkpoint
@@ -275,7 +281,12 @@ def phase2_main_agent_node(state: GlobalState) -> dict[str, Any]:
 
 
 def route_after_preprocess(state: GlobalState) -> str:
-    """After preprocessing, move to Phase 1 fan-out."""
+    """After preprocessing, move to Phase 1 fan-out — or skip to Phase 2
+    if Phase 1 is already done (e.g. when resuming from a Phase 2 checkpoint).
+    """
+    if state.get("current_phase", 0) >= 2 or state.get("converged_phase1"):
+        logger.info("[route_after_preprocess] Phase 1 already done — skipping to Phase 2")
+        return "phase2_fanout"
     return "phase1_fanout"
 
 
@@ -421,7 +432,10 @@ def build_graph() -> StateGraph:
     graph.add_conditional_edges(
         "preprocess",
         route_after_preprocess,
-        {"phase1_fanout": "phase1_fanout"},
+        {
+            "phase1_fanout": "phase1_fanout",
+            "phase2_fanout": "phase2_fanout",
+        },
     )
     # Fan-out node (virtual) — dispatches to sub-agents via Send
     graph.add_node("phase1_fanout", lambda _state: {})

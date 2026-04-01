@@ -124,7 +124,37 @@ python main.py --mock
 
 # Resume from the latest checkpoint
 python main.py --resume
+
+# List all available checkpoints
+python main.py --list-checkpoints
+
+# Resume from a specific checkpoint (e.g. Phase 1, Iteration 5)
+python main.py --resume-from 1:5
+
+# Limit both phases to N iterations (useful for quick testing)
+python main.py --max-iter 3
+
+# Limit iterations per phase independently
+python main.py --max-iter-phase1 5 --max-iter-phase2 3
+
+# Combine: resume from a checkpoint with a reduced iteration limit
+python main.py --resume-from 1:8 --max-iter 2
 ```
+
+### CLI Reference
+
+| Flag | Description |
+|---|---|
+| `--mock` | Run with mock agents (no LLM calls) |
+| `--provider {anthropic,gemini}` | LLM provider (default: `config.LLM_PROVIDER`) |
+| `--resume` | Resume from the latest checkpoint |
+| `--resume-from PHASE:ITER` | Resume from a specific checkpoint, e.g. `1:5` |
+| `--list-checkpoints` | List all saved checkpoints and exit |
+| `--max-iter N` | Override max iterations for **both** phases |
+| `--max-iter-phase1 N` | Override max iterations for Phase 1 only |
+| `--max-iter-phase2 N` | Override max iterations for Phase 2 only |
+| `--anthropic-base-url URL` | Custom API base URL for Anthropic (proxy support) |
+| `--gemini-base-url URL` | Custom API base URL for Gemini (proxy support) |
 
 ### Output
 

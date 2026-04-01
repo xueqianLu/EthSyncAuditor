@@ -51,22 +51,41 @@ def load_checkpoint(phase: int, iteration: int) -> dict[str, Any]:
     return state
 
 
+def _parse_checkpoint_filename(path: Path) -> tuple[int, int]:
+    """Extract (phase, iteration) from a checkpoint filename."""
+    stem = path.stem  # e.g. "checkpoint_phase2_iter5"
+    parts = stem.split("_")
+    phase = int(parts[1].replace("phase", ""))
+    iteration = int(parts[2].replace("iter", ""))
+    return phase, iteration
+
+
+def list_checkpoints() -> list[tuple[int, int, Path]]:
+    """Return all available checkpoints sorted by (phase, iteration).
+
+    Returns a list of (phase, iteration, path) tuples.
+    """
+    config.CHECKPOINT_PATH.mkdir(parents=True, exist_ok=True)
+    results: list[tuple[int, int, Path]] = []
+    for p in config.CHECKPOINT_PATH.glob("checkpoint_phase*_iter*.json"):
+        try:
+            phase, iteration = _parse_checkpoint_filename(p)
+            results.append((phase, iteration, p))
+        except (ValueError, IndexError):
+            logger.warning("[list_checkpoints] skipping malformed file: %s", p)
+    results.sort(key=lambda t: (t[0], t[1]))
+    return results
+
+
 def latest_checkpoint() -> tuple[int, int, dict[str, Any]] | None:
     """Find and load the latest checkpoint (highest phase, then iteration).
 
     Returns (phase, iteration, state) or None if no checkpoints exist.
     """
-    config.CHECKPOINT_PATH.mkdir(parents=True, exist_ok=True)
-    checkpoints = sorted(config.CHECKPOINT_PATH.glob("checkpoint_phase*_iter*.json"))
-    if not checkpoints:
+    ckpts = list_checkpoints()
+    if not ckpts:
         return None
 
-    # Parse phase/iter from filename
-    latest = checkpoints[-1]
-    stem = latest.stem  # e.g. "checkpoint_phase2_iter5"
-    parts = stem.split("_")
-    phase = int(parts[1].replace("phase", ""))
-    iteration = int(parts[2].replace("iter", ""))
-
+    phase, iteration, _path = ckpts[-1]
     state = load_checkpoint(phase, iteration)
     return phase, iteration, state

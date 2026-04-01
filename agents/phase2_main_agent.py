@@ -1,12 +1,15 @@
 """EthAuditor — Phase 2 Main Agent.
 
-Horizontal comparison of client LSGs. Classifies differences as A-class
-(implementation) or B-class (logic), computes logic_diff_rate.
+Horizontal comparison of client LSGs.  Classifies differences as A-class
+(vocabulary / implementation) or B-class (structural / logic), computes
+logic_diff_rate.  A-class diffs produce vocabulary-alignment directives
+that are fed back to Sub-Agents; B-class diffs are preserved for human audit.
 """
 
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +17,7 @@ from jinja2 import Template
 
 from config import CLIENT_NAMES, WORKFLOW_IDS
 from state import DiffItem, DiffReport
-from utils import invoke_with_retry
+from utils import compute_lsg_sparsity, invoke_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +28,69 @@ def _load_prompt_template() -> Template:
     return Template(_PROMPT_PATH.read_text(encoding="utf-8"))
 
 
-def build_phase2_main_agent(llm=None):
+# ── Comparison helpers ──────────────────────────────────────────────────
+
+
+def _jaccard(a: set, b: set) -> float:
+    """Jaccard similarity of two sets.  Returns 1.0 when both are empty."""
+    if not a and not b:
+        return 1.0
+    union = a | b
+    return len(a & b) / len(union) if union else 0.0
+
+
+def _next_cat(state_id: str) -> str:
+    """Extract the trailing phase token from a state id.
+
+    ``'initial.peer_select'`` → ``'peer_select'``
+    ``'done'``                → ``'done'``
+    """
+    return state_id.rsplit(".", 1)[-1] if "." in state_id else state_id
+
+
+_MATCH_THRESHOLD = 0.45  # minimum similarity score to consider A-class
+
+
+def _transition_similarity(
+    guard_a: str, actions_a: frozenset, next_a: str,
+    guard_b: str, actions_b: frozenset, next_b: str,
+) -> float:
+    """Score how similar two transitions are (0.0 – 1.0).
+
+    Weights: guard name 30 %, action Jaccard 45 %, destination category 25 %.
+    """
+    g_score = 1.0 if guard_a == guard_b else 0.0
+    a_score = _jaccard(set(actions_a), set(actions_b))
+    n_score = 1.0 if next_a == next_b else 0.0
+    return 0.30 * g_score + 0.45 * a_score + 0.25 * n_score
+
+
+def _make_rename_description(
+    client: str,
+    guard_a: str, guard_b: str,
+    actions_a: frozenset, actions_b: frozenset,
+) -> str:
+    """Build a human-readable rename directive for an A-class diff."""
+    parts: list[str] = []
+    if guard_a != guard_b:
+        parts.append(f"rename guard `{guard_b}` → `{guard_a}`")
+    # Detect per-action renames by pairing actions that only appear in one side
+    only_a = sorted(actions_a - actions_b)
+    only_b = sorted(actions_b - actions_a)
+    for old, new in zip(only_b, only_a):
+        parts.append(f"rename action `{old}` → `{new}`")
+    # Extra actions with no 1:1 pair
+    for extra in only_b[len(only_a):]:
+        parts.append(f"rename action `{extra}` → ? (no canonical match)")
+    if not parts:
+        return f"In {client}: names already aligned"
+    return f"In {client}: " + "; ".join(parts)
+
+
+# ── Builder ─────────────────────────────────────────────────────────────
+
+
+def build_phase2_main_agent(llm=None, callbacks=None):
     """Build the Phase 2 Main Agent.
 
     If *llm* is None, returns a deterministic comparison implementation.
@@ -34,73 +99,291 @@ def build_phase2_main_agent(llm=None):
     def _run(state: dict[str, Any]) -> dict[str, Any]:
         """Compare client LSGs, classify diffs, compute logic_diff_rate."""
         client_lsgs = state.get("client_lsgs", {})
+        iteration = state.get("phase2_iteration", 1)
+        guards = state.get("guards", [])
+        actions = state.get("actions", [])
 
+        # Compute per-client sparsity hints for sub-agents
+        sparsity_hints = compute_lsg_sparsity(client_lsgs)
+        if sparsity_hints:
+            logger.info(
+                "[phase2_main_agent] %d sparse workflows detected",
+                len(sparsity_hints),
+            )
+
+        # ── LLM path ───────────────────────────────────────────────────
         if llm is not None:
             template = _load_prompt_template()
-            _prompt = template.render(client_lsgs=client_lsgs)
+            _prompt = template.render(
+                client_lsgs=client_lsgs,
+                iteration=iteration,
+                guard_names=[g.get("name", "?") for g in guards],
+                action_names=[a.get("name", "?") for a in actions],
+            )
             try:
                 chain = llm.with_structured_output(DiffReport)
                 report: DiffReport = invoke_with_retry(
                     chain, _prompt, label="phase2_main",
+                    callbacks=callbacks,
                 )
+                a_feedback = [d.model_dump() for d in report.a_class_diffs]
                 return {
                     "diff_report": report.model_dump(),
                     "logic_diff_rate": report.logic_diff_rate,
-                    "a_class_feedback": [d.model_dump() for d in report.a_class_diffs],
+                    "a_class_feedback": a_feedback,
+                    "sparsity_hints": sparsity_hints,
                 }
             except Exception:
                 logger.error("LLM call failed for phase2_main", exc_info=True)
 
-        # Deterministic comparison fallback
-        logger.info("[phase2_main_agent] deterministic comparison of %d clients", len(client_lsgs))
-
-        a_diffs: list[dict] = []
-        b_diffs: list[dict] = []
-        total_items = 0
-
-        # Build triple index: (workflow_id, state_id, guard) → {client: transition}
-        triple_index: dict[tuple[str, str, str], dict[str, Any]] = {}
-
-        for client, lsg in client_lsgs.items():
-            for wf in lsg.get("workflows", []):
-                wf_id = wf["id"]
-                for st in wf.get("states", []):
-                    state_id = st["id"]
-                    for tr in st.get("transitions", []):
-                        guard = tr["guard"]
-                        key = (wf_id, state_id, guard)
-                        if key not in triple_index:
-                            triple_index[key] = {}
-                        triple_index[key][client] = tr
-
-        # Compare
-        for (wf_id, state_id, guard), clients_map in triple_index.items():
-            total_items += 1
-            present = set(clients_map.keys())
-            all_clients = set(client_lsgs.keys())
-
-            if present != all_clients:
-                missing = all_clients - present
-                b_diffs.append({
-                    "workflow_id": wf_id,
-                    "state_id": state_id,
-                    "transition_guard": guard,
-                    "diff_type": "B",
-                    "description": f"Transition missing in: {', '.join(sorted(missing))}",
-                    "involved_clients": sorted(missing),
-                    "evidence": {},
-                })
-
-        logic_diff_rate = len(b_diffs) / max(total_items, 1)
-
-        return {
-            "diff_report": {
-                "a_class_diffs": a_diffs,
-                "b_class_diffs": b_diffs,
-                "logic_diff_rate": logic_diff_rate,
-            },
-            "logic_diff_rate": logic_diff_rate,
-            "a_class_feedback": a_diffs,
-        }
+        # ── Deterministic comparison fallback ───────────────────────────
+        logger.info(
+            "[phase2_main_agent] deterministic comparison of %d clients (iter=%d)",
+            len(client_lsgs), iteration,
+        )
+        return _deterministic_compare(client_lsgs, sparsity_hints)
 
     return _run
+
+
+def _deterministic_compare(
+    client_lsgs: dict[str, dict],
+    sparsity_hints: list[dict],
+) -> dict[str, Any]:
+    """Deterministic A/B diff when no LLM is available.
+
+    Comparison is done per ``(workflow_id, state_category)`` group.
+    Within each group, transitions are matched across clients in three
+    passes:
+
+    1. **Exact match** — same guard name AND same action set.
+    2. **Similarity match** — score ≥ threshold on (guard, Jaccard(actions),
+       destination category).  Covers A1 (guard rename) and A2 (action rename).
+    3. **Positional fallback** — unmatched transitions on *both* sides are
+       paired 1-to-1 by position.  Covers A3 (all three names differ) since
+       they occupy the same structural slot in the same state category.
+
+    Anything still unmatched after all three passes is B-class.
+    """
+    a_diffs: list[dict] = []
+    b_diffs: list[dict] = []
+    total_items = 0
+    all_clients = set(client_lsgs.keys())
+
+    # ── 1. Index: wf_id → state_cat → client → [(guard, actions_fs, next_cat)]
+    wf_cat_idx: dict[str, dict[str, dict[str, list[tuple]]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(list))
+    )
+
+    for client, lsg in client_lsgs.items():
+        for wf in lsg.get("workflows", []):
+            wf_id = wf["id"]
+            for st in wf.get("states", []):
+                cat = st.get("category", "unknown")
+                for tr in st.get("transitions", []):
+                    guard = tr.get("guard", "TRUE")
+                    acts = frozenset(tr.get("actions", []))
+                    nc = _next_cat(tr.get("next_state", ""))
+                    wf_cat_idx[wf_id][cat][client].append((guard, acts, nc))
+
+    # ── 2. Compare within each (wf_id, cat) group ──────────────────────
+    for wf_id, cat_map in wf_cat_idx.items():
+        for cat, client_trs in cat_map.items():
+            clients_here = set(client_trs.keys())
+
+            # Pick reference: client with the most transitions, break
+            # ties alphabetically so that the majority's vocabulary wins
+            # (with equal transition counts the alphabetically-first client
+            # is chosen; for real data the client with richer detail leads).
+            ref_client = max(
+                sorted(clients_here), key=lambda c: len(client_trs[c]),
+            )
+            ref_transitions = client_trs[ref_client]
+
+            # Among clients with the SAME transition count as ref, prefer
+            # the one whose guard names appear in the most other clients
+            # (majority-vocabulary heuristic).
+            max_trs = len(ref_transitions)
+            candidates = sorted(c for c in clients_here if len(client_trs[c]) == max_trs)
+            if len(candidates) > 1:
+                def _vocab_overlap(c: str) -> int:
+                    guards_c = {g for g, _, _ in client_trs[c]}
+                    score = 0
+                    for other_c in clients_here - {c}:
+                        guards_o = {g for g, _, _ in client_trs[other_c]}
+                        score += len(guards_c & guards_o)
+                    return score
+                ref_client = max(candidates, key=_vocab_overlap)
+                ref_transitions = client_trs[ref_client]
+
+            for other_client in sorted(clients_here - {ref_client}):
+                other_transitions = list(client_trs[other_client])
+
+                matched_ref: set[int] = set()
+                matched_other: set[int] = set()
+
+                # ── Pass 1: exact match ─────────────────────────────────
+                for ri, (rg, ra, rn) in enumerate(ref_transitions):
+                    for oj, (og, oa, on) in enumerate(other_transitions):
+                        if oj in matched_other:
+                            continue
+                        if rg == og and ra == oa:
+                            matched_ref.add(ri)
+                            matched_other.add(oj)
+                            break
+
+                # ── Pass 2: similarity match (A1/A2) ───────────────────
+                for ri, (rg, ra, rn) in enumerate(ref_transitions):
+                    if ri in matched_ref:
+                        continue
+                    best_score, best_j = 0.0, -1
+                    for oj, (og, oa, on) in enumerate(other_transitions):
+                        if oj in matched_other:
+                            continue
+                        s = _transition_similarity(rg, ra, rn, og, oa, on)
+                        if s > best_score:
+                            best_score, best_j = s, oj
+                    if best_score >= _MATCH_THRESHOLD and best_j >= 0:
+                        matched_ref.add(ri)
+                        matched_other.add(best_j)
+                        og, oa, on = other_transitions[best_j]
+                        a_diffs.append({
+                            "workflow_id": wf_id,
+                            "state_id": f"{wf_id}.{cat}",
+                            "transition_guard": og,
+                            "diff_type": "A",
+                            "description": _make_rename_description(
+                                other_client, rg, og, ra, oa,
+                            ),
+                            "involved_clients": sorted([ref_client, other_client]),
+                            "evidence": {},
+                        })
+
+                # ── Pass 3: positional fallback (A3) ───────────────────
+                # When guard + actions + dest are ALL renamed, similarity
+                # is 0.  But transitions in the same (wf_id, category) at
+                # the same ordinal position are very likely the same
+                # transition with completely different vocabulary.
+                unmatched_ref = [
+                    i for i in range(len(ref_transitions)) if i not in matched_ref
+                ]
+                unmatched_other = [
+                    j for j in range(len(other_transitions)) if j not in matched_other
+                ]
+                pair_count = min(len(unmatched_ref), len(unmatched_other))
+                for k in range(pair_count):
+                    ri = unmatched_ref[k]
+                    oj = unmatched_other[k]
+                    rg, ra, rn = ref_transitions[ri]
+                    og, oa, on = other_transitions[oj]
+                    matched_ref.add(ri)
+                    matched_other.add(oj)
+                    a_diffs.append({
+                        "workflow_id": wf_id,
+                        "state_id": f"{wf_id}.{cat}",
+                        "transition_guard": og,
+                        "diff_type": "A",
+                        "description": _make_rename_description(
+                            other_client, rg, og, ra, oa,
+                        ),
+                        "involved_clients": sorted([ref_client, other_client]),
+                        "evidence": {},
+                    })
+
+                # ── Count all ref transitions as comparison items ───────
+                total_items += len(ref_transitions)
+
+                # ── Remaining unmatched ref → B-class ──────────────────
+                for ri in range(len(ref_transitions)):
+                    if ri in matched_ref:
+                        continue
+                    rg, ra, rn = ref_transitions[ri]
+                    b_diffs.append({
+                        "workflow_id": wf_id,
+                        "state_id": f"{wf_id}.{cat}",
+                        "transition_guard": rg,
+                        "diff_type": "B",
+                        "description": (
+                            f"Transition ({wf_id}, {cat}, {rg}) present "
+                            f"in {ref_client} but no equivalent in "
+                            f"{other_client}."
+                        ),
+                        "involved_clients": [other_client],
+                        "evidence": {},
+                    })
+
+                # ── Remaining unmatched other → B-class ────────────────
+                for oj in range(len(other_transitions)):
+                    if oj in matched_other:
+                        continue
+                    og, oa, on = other_transitions[oj]
+                    total_items += 1
+                    b_diffs.append({
+                        "workflow_id": wf_id,
+                        "state_id": f"{wf_id}.{cat}",
+                        "transition_guard": og,
+                        "diff_type": "B",
+                        "description": (
+                            f"Transition ({wf_id}, {cat}, {og}) present "
+                            f"in {other_client} but no equivalent in "
+                            f"{ref_client}."
+                        ),
+                        "involved_clients": [other_client],
+                        "evidence": {},
+                    })
+
+            # Clients that don't have this state category at all
+            for c in sorted(all_clients - clients_here):
+                for ref_g, ref_a, ref_n in ref_transitions:
+                    total_items += 1
+                    b_diffs.append({
+                        "workflow_id": wf_id,
+                        "state_id": f"{wf_id}.{cat}",
+                        "transition_guard": ref_g,
+                        "diff_type": "B",
+                        "description": (
+                            f"State category `{cat}` in workflow `{wf_id}` "
+                            f"exists in {', '.join(sorted(clients_here))} "
+                            f"but is missing in {c}."
+                        ),
+                        "involved_clients": [c],
+                        "evidence": {},
+                    })
+
+    # ── 3. Check for stub workflows ────────────────────────────────────
+    for wf_id in WORKFLOW_IDS:
+        clients_with_wf = set()
+        for client, lsg in client_lsgs.items():
+            for wf in lsg.get("workflows", []):
+                if wf["id"] == wf_id and len(wf.get("states", [])) > 2:
+                    clients_with_wf.add(client)
+        missing = all_clients - clients_with_wf
+        if missing and clients_with_wf:
+            total_items += 1
+            b_diffs.append({
+                "workflow_id": wf_id,
+                "state_id": f"{wf_id}.*",
+                "transition_guard": "*",
+                "diff_type": "B",
+                "description": (
+                    f"Workflow `{wf_id}` is substantive in "
+                    f"{', '.join(sorted(clients_with_wf))} but only a stub "
+                    f"in {', '.join(sorted(missing))}."
+                ),
+                "involved_clients": sorted(missing),
+                "evidence": {},
+            })
+
+    logic_diff_rate = len(b_diffs) / max(total_items, 1)
+
+    return {
+        "diff_report": {
+            "a_class_diffs": a_diffs,
+            "b_class_diffs": b_diffs,
+            "logic_diff_rate": logic_diff_rate,
+        },
+        "logic_diff_rate": logic_diff_rate,
+        "a_class_feedback": a_diffs,
+        "sparsity_hints": sparsity_hints,
+    }
+

@@ -164,3 +164,56 @@ def test_lsg_file_model_dump():
     d = f.model_dump()
     f2 = LSGFile(**d)
     assert f2.client == "teku"
+
+
+# ── _collect_then_clear reducer ─────────────────────────────────────────
+
+from state import _collect_then_clear
+
+
+def test_collect_then_clear_appends_non_empty():
+    """Non-empty new list is appended to existing."""
+    result = _collect_then_clear([1, 2], [3, 4])
+    assert result == [1, 2, 3, 4]
+
+
+def test_collect_then_clear_clears_on_empty():
+    """Empty new list clears the existing list."""
+    result = _collect_then_clear([1, 2, 3], [])
+    assert result == []
+
+
+def test_collect_then_clear_none_existing():
+    """None existing is treated as empty list."""
+    result = _collect_then_clear(None, [1])
+    assert result == [1]
+
+
+def test_collect_then_clear_none_new():
+    """None new keeps existing unchanged."""
+    result = _collect_then_clear([1, 2], None)
+    assert result == [1, 2]
+
+
+def test_collect_then_clear_both_empty():
+    """Empty new on empty existing returns empty."""
+    result = _collect_then_clear([], [])
+    assert result == []
+
+
+def test_collect_then_clear_fanout_then_clear_cycle():
+    """Simulates a full iteration cycle: fanout accumulates, main clears."""
+    # Sub-agent 1 writes
+    state = _collect_then_clear([], [{"client": "prysm", "iteration": 1}])
+    assert len(state) == 1
+    # Sub-agent 2 writes
+    state = _collect_then_clear(state, [{"client": "lighthouse", "iteration": 1}])
+    assert len(state) == 2
+    # Main agent clears
+    state = _collect_then_clear(state, [])
+    assert state == []
+    # Next iteration sub-agent writes
+    state = _collect_then_clear(state, [{"client": "prysm", "iteration": 2}])
+    assert len(state) == 1
+    assert state[0]["iteration"] == 2
+

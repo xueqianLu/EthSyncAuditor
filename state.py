@@ -147,6 +147,39 @@ def _merge_lists(existing: list, new: list) -> list:
     return existing + new
 
 
+def _merge_vocab(existing: list, new: list) -> list:
+    """Deduplicated list merge for vocabulary entries (guards / actions).
+
+    Each entry is a dict with a ``"name"`` key.  When *new* contains an
+    entry whose name already exists in *existing*, the newer version
+    **replaces** the old one.  This prevents the unbounded growth that
+    ``_merge_lists`` causes when Phase 1 Main returns incremental entries
+    across many iterations.
+    """
+    if existing is None:
+        existing = []
+    if new is None:
+        new = []
+    seen: dict[str, int] = {}          # name → index in result
+    result: list = []
+    for entry in existing:
+        name = entry.get("name", "") if isinstance(entry, dict) else str(entry)
+        if name and name not in seen:
+            seen[name] = len(result)
+            result.append(entry)
+        elif not name:
+            result.append(entry)       # keep entries without a name key
+    for entry in new:
+        name = entry.get("name", "") if isinstance(entry, dict) else str(entry)
+        if name and name in seen:
+            result[seen[name]] = entry  # replace with newer version
+        else:
+            if name:
+                seen[name] = len(result)
+            result.append(entry)
+    return result
+
+
 def _merge_dicts(existing: dict, new: dict) -> dict:
     """Shallow‑merge dict reducer (e.g. client LSG maps)."""
     if existing is None:
@@ -198,8 +231,8 @@ class GlobalState(TypedDict, total=False):
     phase2_iteration: int
 
     # ── Vocabulary (Phase 1 output) ─────────────────────────────────────
-    guards: Annotated[list[dict], _merge_lists]
-    actions: Annotated[list[dict], _merge_lists]
+    guards: Annotated[list[dict], _merge_vocab]
+    actions: Annotated[list[dict], _merge_vocab]
     vocab_version: int
     diff_rate: float
 
@@ -225,3 +258,4 @@ class GlobalState(TypedDict, total=False):
     # ── Inter‑agent communication ───────────────────────────────────────
     discovery_reports: Annotated[list[dict], _merge_lists]
     a_class_feedback: Annotated[list[dict], _merge_lists]
+    sparsity_hints: Annotated[list[dict], _replace]

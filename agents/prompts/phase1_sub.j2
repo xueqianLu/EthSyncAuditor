@@ -23,6 +23,90 @@ For each candidate you discover, provide:
 3. **description**: One-sentence semantic description
 4. **evidence**: The source file path, function name, and line range where you found it
 
-Focus on the 7 core workflows: initial_sync, regular_sync, checkpoint_sync, attestation_generate, block_generate, aggregate, execute_layer_relation.
+Focus on the 7 core workflows described below. For each workflow, search relevant source code
+modules to discover Guards and Actions that the vocabulary may be missing.
+
+### Workflow Business Semantics & Search Hints
+
+1. **initial_sync** — The node starts from empty (or stale) state and bulk-downloads blocks via
+   `BeaconBlocksByRange` RPC from peers. Batches are validated (BLS, state transition, consensus)
+   and applied to advance fork-choice until the local head reaches the network target slot, then
+   switches to regular_sync.
+   Search: peer selection/scoring, range request pipelines, batch validation, fork-choice updates,
+   sync progress tracking, timeout/retry logic.
+{% if language == "Go" %}   Hint: `beacon-chain/sync/initial-sync/`, `blocksFetcher`, `*Service`{% endif %}
+{% if language == "Rust" and client_name == "lighthouse" %}   Hint: `beacon_node/network/src/sync/range_sync/`, `RangeSync`, `SyncingChain`{% endif %}
+{% if language == "Rust" and client_name == "grandine" %}   Hint: `fork_choice_control/`, sync manager{% endif %}
+{% if language == "Java" %}   Hint: `beacon/sync/`, `ForwardSync`, `SyncManager`, `PeerSync`{% endif %}
+{% if language == "TypeScript" %}   Hint: `packages/beacon-node/src/sync/range/`, `RangeSync`, `SyncChain`{% endif %}
+
+2. **regular_sync** — Node is synced; maintains chain head via GossipSub. Receives blocks and
+   attestations from gossip topics (`beacon_block`, `beacon_attestation`, etc.), validates and
+   imports them, updates fork-choice. Falls back to range sync if too far behind.
+   Search: gossip message handlers, block/attestation validation, fork-choice update, missing
+   parent handling (`BeaconBlocksByRoot`), peer penalization.
+{% if language == "Go" %}   Hint: `beacon-chain/sync/`, `receiveBlock`, `receiveAttestation`{% endif %}
+{% if language == "Rust" and client_name == "lighthouse" %}   Hint: `beacon_node/network/src/sync/`, `NetworkBeaconProcessor`{% endif %}
+{% if language == "Rust" and client_name == "grandine" %}   Hint: `fork_choice_control/`, `eth2_libp2p/`{% endif %}
+{% if language == "Java" %}   Hint: `networking/eth2/src/.../gossip/`, `BlockImporter`, `AttestationManager`{% endif %}
+{% if language == "TypeScript" %}   Hint: `packages/beacon-node/src/chain/`, gossip handlers{% endif %}
+
+3. **checkpoint_sync** — Fast bootstrap from a trusted finalized checkpoint (state + block)
+   fetched via Beacon API or peer. Node verifies state root, initializes fork-choice from
+   the anchor, syncs forward to head, then optionally backfills historical blocks toward genesis.
+   Search: checkpoint fetching, state root verification, anchor initialization, backfill logic.
+{% if language == "Go" %}   Hint: `beacon-chain/sync/checkpoint/`, `--checkpoint-sync-url`{% endif %}
+{% if language == "Rust" and client_name == "lighthouse" %}   Hint: `beacon_node/src/cli.rs`, `beacon_node/network/src/sync/backfill_sync/`{% endif %}
+{% if language == "Rust" and client_name == "grandine" %}   Hint: `grandine/src/`, checkpoint init path{% endif %}
+{% if language == "Java" %}   Hint: `beacon/sync/`, `WeakSubjectivitySync`, `CheckpointSync`{% endif %}
+{% if language == "TypeScript" %}   Hint: `packages/beacon-node/src/sync/`, `--checkpointSyncUrl`, backfill{% endif %}
+
+4. **attestation_generate** — Validator produces an attestation: fetches committee duties,
+   waits until 1/3 into slot (4s), builds Attestation (source/target/head votes), signs with
+   BLS key (with slashing protection), publishes to the assigned attestation subnet.
+   Search: attester duty fetching, attestation data construction, BLS signing, slashing DB,
+   subnet publishing.
+{% if language == "Go" %}   Hint: `validator/client/attest.go`, `submitAttestation`, `createAttestation`{% endif %}
+{% if language == "Rust" and client_name == "lighthouse" %}   Hint: `validator_client/src/attestation_service.rs`{% endif %}
+{% if language == "Rust" and client_name == "grandine" %}   Hint: validator crate, attestation production{% endif %}
+{% if language == "Java" %}   Hint: `validator/client/src/.../duties/`, `AttestationProductionDuty`{% endif %}
+{% if language == "TypeScript" %}   Hint: `packages/validator/src/services/attestation.ts`{% endif %}
+
+5. **block_generate** — Validator proposes a block: fetches proposer duties, calls
+   `engine_forkchoiceUpdated` (with payloadAttributes) to start EL payload building, calls
+   `engine_getPayload` to retrieve it, assembles full beacon block body (attestations, deposits,
+   slashings, sync aggregate, execution payload, blob KZG commitments post-Deneb), signs with
+   proposer key (slashing protection), broadcasts via gossip.
+   Search: proposer duty, execution payload retrieval, block assembly, BLS signing, gossip broadcast.
+{% if language == "Go" %}   Hint: `validator/client/propose.go`, `ProposeBlock`, beacon-side `proposer.go`{% endif %}
+{% if language == "Rust" and client_name == "lighthouse" %}   Hint: `validator_client/src/block_service.rs`, `beacon_node/execution_layer/`{% endif %}
+{% if language == "Rust" and client_name == "grandine" %}   Hint: `block_producer/`{% endif %}
+{% if language == "Java" %}   Hint: `validator/client/src/.../duties/BlockProductionDuty.java`{% endif %}
+{% if language == "TypeScript" %}   Hint: `packages/validator/src/services/block.ts`{% endif %}
+
+6. **aggregate** — Aggregator role: validator checks VRF-based aggregator selection, subscribes
+   to committee attestation subnet, waits until 2/3 into slot (8s), collects individual
+   attestations, combines into AggregateAndProof (bitwise-OR bits + BLS signature combination),
+   signs, publishes to global `beacon_aggregate_and_proof` topic.
+   Search: aggregator selection check, subnet subscription, attestation collection, aggregate
+   computation, aggregate signing/publishing.
+{% if language == "Go" %}   Hint: `validator/client/aggregate.go`, `SubmitAggregateAndProof`{% endif %}
+{% if language == "Rust" and client_name == "lighthouse" %}   Hint: `validator_client/src/attestation_service.rs` (aggregation section){% endif %}
+{% if language == "Rust" and client_name == "grandine" %}   Hint: aggregation pool, validator event loop{% endif %}
+{% if language == "Java" %}   Hint: `validator/client/src/.../duties/AggregationDuty.java`{% endif %}
+{% if language == "TypeScript" %}   Hint: `packages/validator/src/services/attestation.ts` (combined attest + aggregate){% endif %}
+
+7. **execute_layer_relation** — CL↔EL interaction via Engine API: (a) `engine_newPayload` sends
+   execution payload to EL for validation → returns VALID/INVALID/SYNCING; (b)
+   `engine_forkchoiceUpdated` notifies EL of head/safe/finalized hashes (optionally triggers
+   payload building); (c) optimistic sync when EL is syncing; (d) invalid payload handling —
+   invalidate block + descendants, rollback fork-choice head.
+   Search: Engine API calls, newPayload/forkchoiceUpdated handling, optimistic import logic,
+   payload status processing, rollback/reorg on INVALID.
+{% if language == "Go" %}   Hint: `beacon-chain/execution/`, `beacon-chain/blockchain/`, `notifyNewPayload`, `notifyForkchoiceUpdate`{% endif %}
+{% if language == "Rust" and client_name == "lighthouse" %}   Hint: `beacon_node/execution_layer/src/`, `notify_new_payload`, `notify_forkchoice_updated`{% endif %}
+{% if language == "Rust" and client_name == "grandine" %}   Hint: `execution_engine/`, `fork_choice_control/`{% endif %}
+{% if language == "Java" %}   Hint: `ethereum/executionlayer/src/`, `ExecutionLayerManager`{% endif %}
+{% if language == "TypeScript" %}   Hint: `packages/beacon-node/src/execution/engine/`, `verifyBlocksExecutionPayload`{% endif %}
 
 Return your findings as structured JSON with `new_guards` and `new_actions` lists.
