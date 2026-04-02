@@ -87,6 +87,38 @@ def _make_rename_description(
     return f"In {client}: " + "; ".join(parts)
 
 
+def _classify_severity(diff: dict) -> str:
+    """Classify a B-class diff by severity based on its description and state_id.
+
+    Returns one of: ``"CRITICAL"``, ``"MAJOR"``, ``"MINOR"``.
+    """
+    desc_lower = (diff.get("description", "") or "").lower()
+    state_id = diff.get("state_id", "")
+
+    # CRITICAL: entire workflow stub/missing, or wildcard state
+    if state_id.endswith(".*") or "stub" in desc_lower or "missing workflow" in desc_lower:
+        return "CRITICAL"
+
+    # CRITICAL: state category entirely absent
+    if "missing in" in desc_lower and "state category" in desc_lower:
+        return "CRITICAL"
+
+    # MINOR: extra/missing single transition, granularity differences
+    minor_keywords = [
+        "present in",
+        "but no equivalent",
+        "not present in other",
+        "granularity",
+        "not explicitly",
+        "implicitly",
+    ]
+    if any(kw in desc_lower for kw in minor_keywords):
+        return "MINOR"
+
+    # MAJOR: default for genuine behavioral/architectural differences
+    return "MAJOR"
+
+
 # ── Builder ─────────────────────────────────────────────────────────────
 
 
@@ -127,11 +159,28 @@ def build_phase2_main_agent(llm=None, callbacks=None):
                     callbacks=callbacks,
                 )
                 a_feedback = [d.model_dump() for d in report.a_class_diffs]
+                # Always recompute logic_diff_rate from actual counts — the LLM
+                # cannot be trusted to compute this metric correctly.
+                n_a = len(report.a_class_diffs)
+                n_b = len(report.b_class_diffs)
+                recomputed_rate = n_b / max(n_a + n_b, 1)
+                # Assign severity to B-class diffs if the LLM didn't
+                b_diffs_out = []
+                for d in report.b_class_diffs:
+                    dd = d.model_dump()
+                    if not dd.get("severity"):
+                        dd["severity"] = _classify_severity(dd)
+                    b_diffs_out.append(dd)
                 return {
-                    "diff_report": report.model_dump(),
-                    "logic_diff_rate": report.logic_diff_rate,
+                    "diff_report": {
+                        "a_class_diffs": [d.model_dump() for d in report.a_class_diffs],
+                        "b_class_diffs": b_diffs_out,
+                        "logic_diff_rate": recomputed_rate,
+                        "total_transitions": report.total_transitions or (n_a + n_b),
+                    },
+                    "logic_diff_rate": recomputed_rate,
                     "a_class_feedback": a_feedback,
-                    "a_class_count": len(report.a_class_diffs),
+                    "a_class_count": n_a,
                     "sparsity_hints": sparsity_hints,
                 }
             except Exception:
@@ -299,7 +348,7 @@ def _deterministic_compare(
                     if ri in matched_ref:
                         continue
                     rg, ra, rn = ref_transitions[ri]
-                    b_diffs.append({
+                    diff_entry = {
                         "workflow_id": wf_id,
                         "state_id": f"{wf_id}.{cat}",
                         "transition_guard": rg,
@@ -309,9 +358,11 @@ def _deterministic_compare(
                             f"in {ref_client} but no equivalent in "
                             f"{other_client}."
                         ),
-                        "involved_clients": [other_client],
+                        "involved_clients": sorted([ref_client, other_client]),
                         "evidence": {},
-                    })
+                    }
+                    diff_entry["severity"] = _classify_severity(diff_entry)
+                    b_diffs.append(diff_entry)
 
                 # ── Remaining unmatched other → B-class ────────────────
                 for oj in range(len(other_transitions)):
@@ -319,7 +370,7 @@ def _deterministic_compare(
                         continue
                     og, oa, on = other_transitions[oj]
                     total_items += 1
-                    b_diffs.append({
+                    diff_entry = {
                         "workflow_id": wf_id,
                         "state_id": f"{wf_id}.{cat}",
                         "transition_guard": og,
@@ -329,15 +380,17 @@ def _deterministic_compare(
                             f"in {other_client} but no equivalent in "
                             f"{ref_client}."
                         ),
-                        "involved_clients": [other_client],
+                        "involved_clients": sorted([ref_client, other_client]),
                         "evidence": {},
-                    })
+                    }
+                    diff_entry["severity"] = _classify_severity(diff_entry)
+                    b_diffs.append(diff_entry)
 
             # Clients that don't have this state category at all
             for c in sorted(all_clients - clients_here):
                 for ref_g, ref_a, ref_n in ref_transitions:
                     total_items += 1
-                    b_diffs.append({
+                    diff_entry = {
                         "workflow_id": wf_id,
                         "state_id": f"{wf_id}.{cat}",
                         "transition_guard": ref_g,
@@ -347,9 +400,11 @@ def _deterministic_compare(
                             f"exists in {', '.join(sorted(clients_here))} "
                             f"but is missing in {c}."
                         ),
-                        "involved_clients": [c],
+                        "involved_clients": sorted(list(clients_here) + [c]),
                         "evidence": {},
-                    })
+                    }
+                    diff_entry["severity"] = _classify_severity(diff_entry)
+                    b_diffs.append(diff_entry)
 
     # ── 3. Check for stub workflows ────────────────────────────────────
     for wf_id in WORKFLOW_IDS:
@@ -361,7 +416,7 @@ def _deterministic_compare(
         missing = all_clients - clients_with_wf
         if missing and clients_with_wf:
             total_items += 1
-            b_diffs.append({
+            diff_entry = {
                 "workflow_id": wf_id,
                 "state_id": f"{wf_id}.*",
                 "transition_guard": "*",
@@ -371,9 +426,11 @@ def _deterministic_compare(
                     f"{', '.join(sorted(clients_with_wf))} but only a stub "
                     f"in {', '.join(sorted(missing))}."
                 ),
-                "involved_clients": sorted(missing),
+                "involved_clients": sorted(missing | clients_with_wf),
                 "evidence": {},
-            })
+            }
+            diff_entry["severity"] = _classify_severity(diff_entry)
+            b_diffs.append(diff_entry)
 
     logic_diff_rate = len(b_diffs) / max(total_items, 1)
 
@@ -382,6 +439,7 @@ def _deterministic_compare(
             "a_class_diffs": a_diffs,
             "b_class_diffs": b_diffs,
             "logic_diff_rate": logic_diff_rate,
+            "total_transitions": total_items,
         },
         "logic_diff_rate": logic_diff_rate,
         "a_class_feedback": a_diffs,

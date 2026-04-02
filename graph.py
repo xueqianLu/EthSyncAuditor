@@ -28,6 +28,9 @@ from state import GlobalState
 
 logger = logging.getLogger(__name__)
 
+# Module-level convergence reason — set by router, read by convergence nodes.
+_last_p2_convergence_reason: str = ""
+
 
 # ────────────────────────────────────────────────────────────────────────
 # Graph-level configuration (set before compile_graph)
@@ -91,6 +94,7 @@ def make_initial_state() -> dict[str, Any]:
         "converged_phase1": False,
         "converged_phase2": False,
         "force_stopped": False,
+        "convergence_reason": "",
         "a_class_count": -1,
         "prev_a_class_count": -1,
         "iteration_history": [],
@@ -387,6 +391,8 @@ def route_after_phase2_main(state: GlobalState) -> str:
     3. **Oscillation** detected — A-class count oscillates within a narrow band
        for ``OSCILLATION_WINDOW`` consecutive iterations.
     """
+    global _last_p2_convergence_reason
+
     iteration = state.get("phase2_iteration", 1)
     a_class_count = state.get("a_class_count", -1)
     prev_a_class_count = state.get("prev_a_class_count", -1)
@@ -394,6 +400,10 @@ def route_after_phase2_main(state: GlobalState) -> str:
 
     # ── Criterion 1: zero A-class diffs ────────────────────────────────
     if a_class_count == 0:
+        _last_p2_convergence_reason = (
+            f"Zero A-class diffs at iteration {iteration} — "
+            f"perfect vocabulary alignment achieved."
+        )
         logger.info(
             "[router_phase2] CONVERGED at iter=%d — zero A-class diffs",
             iteration,
@@ -405,6 +415,12 @@ def route_after_phase2_main(state: GlobalState) -> str:
         delta = abs(a_class_count - prev_a_class_count)
         delta_rate = delta / max(prev_a_class_count, 1)
         if delta_rate < config.P2_A_CLASS_CONVERGENCE_THRESHOLD:
+            _last_p2_convergence_reason = (
+                f"A-class delta stabilized at iteration {iteration}: "
+                f"prev={prev_a_class_count}, cur={a_class_count}, "
+                f"delta_rate={delta_rate:.4f} < threshold "
+                f"{config.P2_A_CLASS_CONVERGENCE_THRESHOLD}."
+            )
             logger.info(
                 "[router_phase2] CONVERGED at iter=%d — A-class delta "
                 "stabilized (prev=%d, cur=%d, delta_rate=%.4f)",
@@ -417,6 +433,12 @@ def route_after_phase2_main(state: GlobalState) -> str:
         recent = history[-config.OSCILLATION_WINDOW:]
         recent_a = [h.get("a_class_count", 0) for h in recent]
         if max(recent_a) - min(recent_a) <= config.OSCILLATION_BAND:
+            _last_p2_convergence_reason = (
+                f"A-class oscillation detected at iteration {iteration}: "
+                f"last {config.OSCILLATION_WINDOW} values={recent_a}, "
+                f"band={max(recent_a) - min(recent_a)} ≤ "
+                f"{config.OSCILLATION_BAND}."
+            )
             logger.info(
                 "[router_phase2] CONVERGED at iter=%d — A-class oscillation "
                 "detected over last %d iters: %s",
@@ -426,12 +448,17 @@ def route_after_phase2_main(state: GlobalState) -> str:
 
     # ── MAX_ITER guard ─────────────────────────────────────────────────
     if iteration >= config.MAX_ITER_PHASE2:
+        _last_p2_convergence_reason = (
+            f"MAX_ITER_PHASE2 ({config.MAX_ITER_PHASE2}) reached "
+            f"without convergence. Last A-class count: {a_class_count}."
+        )
         logger.warning(
             "[router_phase2] MAX_ITER reached (%d) — force stopping Phase 2",
             config.MAX_ITER_PHASE2,
         )
         return "phase2_force_stop"
 
+    _last_p2_convergence_reason = ""
     return "phase2_next_iter"
 
 
@@ -447,6 +474,7 @@ def phase2_converged_node(state: GlobalState) -> dict[str, Any]:
     """Mark Phase 2 as converged."""
     return {
         "converged_phase2": True,
+        "convergence_reason": _last_p2_convergence_reason,
     }
 
 
@@ -455,6 +483,7 @@ def phase2_force_stop_node(state: GlobalState) -> dict[str, Any]:
     return {
         "converged_phase2": False,
         "force_stopped": True,
+        "convergence_reason": _last_p2_convergence_reason,
     }
 
 

@@ -25,6 +25,7 @@ Below is the complete field specification.
 | `converged_phase1` | `bool` | `False` | `router_phase1` | Graph routing |
 | `converged_phase2` | `bool` | `False` | `router_phase2` | Graph routing |
 | `force_stopped` | `bool` | `False` | Routers | Exit nodes |
+| `convergence_reason` | `str` | `""` | `phase2_converged`, `phase2_force_stop` | Writer |
 | `preprocess_done` | `bool` | `False` | `preprocess_node` | Router |
 | `preprocess_status` | `dict[str, dict]` | `{}` | `preprocess_node` | `preprocess_node` |
 | `audit_log_paths` | `list[str]` | `[]` | Audit logger callback | Writer |

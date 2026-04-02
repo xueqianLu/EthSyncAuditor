@@ -22,7 +22,9 @@ from graph import (
     phase1_next_iter_node,
     phase2_next_iter_node,
     _graph_config,
+    _last_p2_convergence_reason,
 )
+import graph as _graph_module
 
 
 # ── Initial state ──────────────────────────────────────────────────────
@@ -35,6 +37,7 @@ def test_make_initial_state_fields():
         "guards", "actions", "vocab_version", "diff_rate",
         "client_lsgs", "diff_report", "logic_diff_rate",
         "converged_phase1", "converged_phase2", "force_stopped",
+        "convergence_reason",
         "a_class_count", "prev_a_class_count", "iteration_history",
         "preprocess_done", "preprocess_status",
         "audit_log_paths", "discovery_reports", "a_class_feedback",
@@ -165,6 +168,8 @@ def test_route_phase2_converged_delta_stable():
     state["prev_a_class_count"] = 10  # delta = 0 → below threshold
     state["phase2_iteration"] = 3
     assert route_after_phase2_main(state) == "phase2_converged"
+    # Check that convergence reason was recorded
+    assert "delta stabilized" in _graph_module._last_p2_convergence_reason.lower()
 
 
 def test_route_phase2_converged_oscillation():
@@ -179,6 +184,7 @@ def test_route_phase2_converged_oscillation():
         {"iteration": 5, "a_class_count": 11, "b_class_count": 40, "logic_diff_rate": 0.7},
     ]
     assert route_after_phase2_main(state) == "phase2_converged"
+    assert "oscillation" in _graph_module._last_p2_convergence_reason.lower()
 
 
 def test_route_phase2_force_stop():
@@ -215,14 +221,25 @@ def test_phase1_force_stop_node():
 
 def test_phase2_converged_node():
     state = make_initial_state()
+    # Trigger the router first so _last_p2_convergence_reason is set
+    state["a_class_count"] = 0
+    route_after_phase2_main(state)
     result = phase2_converged_node(state)
     assert result["converged_phase2"] is True
+    assert "convergence_reason" in result
+    assert "Zero A-class" in result["convergence_reason"]
 
 
 def test_phase2_force_stop_node():
     state = make_initial_state()
+    state["a_class_count"] = 20
+    state["prev_a_class_count"] = -1
+    state["phase2_iteration"] = _config.MAX_ITER_PHASE2
+    route_after_phase2_main(state)
     result = phase2_force_stop_node(state)
     assert result["force_stopped"] is True
+    assert "convergence_reason" in result
+    assert "MAX_ITER" in result["convergence_reason"]
 
 
 def test_phase1_next_iter_bumps():

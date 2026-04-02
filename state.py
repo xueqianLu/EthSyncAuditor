@@ -82,6 +82,7 @@ class DiffItem(BaseModel):
     transition_guard: str
     diff_type: str  # "A" or "B"
     description: str
+    severity: str = ""  # "CRITICAL" / "MAJOR" / "MINOR" (B-class only)
     involved_clients: list[str] = Field(default_factory=list)
     evidence: dict[str, Evidence | None] = Field(default_factory=dict)
 
@@ -92,6 +93,7 @@ class DiffReport(BaseModel):
     a_class_diffs: list[DiffItem] = Field(default_factory=list)
     b_class_diffs: list[DiffItem] = Field(default_factory=list)
     logic_diff_rate: float = 1.0
+    total_transitions: int = 0  # total comparison items for similarity computation
 
 
 class VocabDiscoveryReport(BaseModel):
@@ -247,6 +249,7 @@ class GlobalState(TypedDict, total=False):
     converged_phase1: bool
     converged_phase2: bool
     force_stopped: bool
+    convergence_reason: str  # human-readable reason for convergence / force-stop
 
     # ── Phase 2 convergence tracking ─────────────────────────────────────
     a_class_count: Annotated[int, _replace]          # current iteration A-class diff count

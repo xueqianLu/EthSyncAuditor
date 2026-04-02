@@ -5,6 +5,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from agents.phase2_main_agent import (
     _jaccard, _next_cat, _transition_similarity,
     _make_rename_description, _deterministic_compare,
+    _classify_severity,
 )
 
 
@@ -109,8 +110,9 @@ def test_full_comparison():
         print(f"    {d['description']}")
     print(f"  B-class ({len(dr['b_class_diffs'])}):")
     for d in dr["b_class_diffs"]:
-        print(f"    {d['description']}")
+        print(f"    [{d.get('severity', '?')}] {d['description']}")
     print(f"  logic_diff_rate: {dr['logic_diff_rate']:.2f}")
+    print(f"  total_transitions: {dr['total_transitions']}")
 
     # lighthouse should have A-class diffs (vocabulary renames)
     a_descs = " ".join(d["description"] for d in dr["a_class_diffs"])
@@ -120,7 +122,49 @@ def test_full_comparison():
     b_descs = " ".join(d["description"] for d in dr["b_class_diffs"])
     assert "grandine" in b_descs, f"Expected B-class for grandine, got: {b_descs}"
 
+    # B-class diffs should have severity assigned
+    for d in dr["b_class_diffs"]:
+        assert d.get("severity") in ("CRITICAL", "MAJOR", "MINOR"), \
+            f"Expected severity, got: {d.get('severity')}"
+
+    # B-class involved_clients should include both ref and non-ref client
+    for d in dr["b_class_diffs"]:
+        assert len(d.get("involved_clients", [])) >= 2, \
+            f"Expected both clients in involved_clients, got: {d.get('involved_clients')}"
+
+    # total_transitions should be present and positive
+    assert dr["total_transitions"] > 0
+
     print("  OK: full comparison")
+
+
+def test_classify_severity():
+    """Test severity classification of B-class diffs."""
+    # CRITICAL: stub workflow
+    assert _classify_severity({
+        "state_id": "initial_sync.*",
+        "description": "Workflow is substantive in X but only a stub in Y",
+    }) == "CRITICAL"
+
+    # CRITICAL: missing state category
+    assert _classify_severity({
+        "state_id": "initial_sync.validate",
+        "description": "State category `validate` exists in X but is missing in Y",
+    }) == "CRITICAL"
+
+    # MINOR: transition present in one but not the other
+    assert _classify_severity({
+        "state_id": "initial_sync.validate",
+        "description": "Transition present in prysm but no equivalent in lighthouse",
+    }) == "MINOR"
+
+    # MAJOR: default for other differences
+    assert _classify_severity({
+        "state_id": "initial_sync.validate",
+        "description": "Different validation approach between prysm and lighthouse",
+    }) == "MAJOR"
+
+    print("  OK: _classify_severity")
 
 
 if __name__ == "__main__":
@@ -132,5 +176,6 @@ if __name__ == "__main__":
     test_similarity_all_different()
     test_rename_description()
     test_full_comparison()
+    test_classify_severity()
     print("\n=== ALL TESTS PASSED ===")
 

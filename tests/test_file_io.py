@@ -146,14 +146,17 @@ class TestWriter:
                         "state_id": "s1",
                         "transition_guard": "G1",
                         "diff_type": "B",
-                        "description": "Missing in prysm",
-                        "involved_clients": ["prysm"],
+                        "description": "Transition present in prysm but no equivalent in lighthouse",
+                        "severity": "MINOR",
+                        "involved_clients": ["prysm", "lighthouse"],
                         "evidence": {},
                     }
                 ],
                 "logic_diff_rate": 0.1,
+                "total_transitions": 10,
             },
             "force_stopped": False,
+            "convergence_reason": "A-class delta stabilized at iteration 3",
             "iteration_history": [
                 {"iteration": 1, "a_class_count": 3, "b_class_count": 5, "logic_diff_rate": 0.5},
                 {"iteration": 2, "a_class_count": 1, "b_class_count": 5, "logic_diff_rate": 0.4},
@@ -172,6 +175,99 @@ class TestWriter:
         assert "Iteration Trend" in content
         assert "initial_sync" in content
         assert "OldGuard" in content  # A-class diff shown
+        # New: convergence reason and severity
+        assert "Convergence Reason" in content
+        assert "delta stabilized" in content
+        assert "MINOR" in content or "Minor" in content
+
+    def test_write_diff_report_severity_grouping(self):
+        """B-class diffs are grouped by severity tier in the report."""
+        from file_io.writer import write_diff_report
+
+        state = {
+            "diff_report": {
+                "a_class_diffs": [],
+                "b_class_diffs": [
+                    {
+                        "workflow_id": "initial_sync",
+                        "state_id": "initial_sync.*",
+                        "transition_guard": "*",
+                        "diff_type": "B",
+                        "description": "Workflow `initial_sync` is substantive in X but only a stub in Y",
+                        "severity": "CRITICAL",
+                        "involved_clients": ["prysm", "lighthouse"],
+                        "evidence": {},
+                    },
+                    {
+                        "workflow_id": "regular_sync",
+                        "state_id": "regular_sync.validate",
+                        "transition_guard": "HasBlock",
+                        "diff_type": "B",
+                        "description": "Different validation approach",
+                        "severity": "MAJOR",
+                        "involved_clients": ["prysm", "teku"],
+                        "evidence": {},
+                    },
+                    {
+                        "workflow_id": "aggregate",
+                        "state_id": "aggregate.pool",
+                        "transition_guard": "TRUE",
+                        "diff_type": "B",
+                        "description": "Transition present in prysm but no equivalent in teku",
+                        "severity": "MINOR",
+                        "involved_clients": ["prysm", "teku"],
+                        "evidence": {},
+                    },
+                ],
+                "logic_diff_rate": 0.5,
+            },
+            "force_stopped": False,
+        }
+        path = write_diff_report(state)
+        content = path.read_text()
+        # Verify severity sub-headings exist
+        assert "Critical" in content
+        assert "Major" in content
+        assert "Minor" in content
+
+    def test_write_diff_report_deduplication(self):
+        """Symmetric B-class diffs are merged into one entry."""
+        from file_io.writer import write_diff_report
+
+        state = {
+            "diff_report": {
+                "a_class_diffs": [],
+                "b_class_diffs": [
+                    {
+                        "workflow_id": "regular_sync",
+                        "state_id": "regular_sync.check",
+                        "transition_guard": "HasPeers",
+                        "diff_type": "B",
+                        "description": "Transition present in prysm but no equivalent in lighthouse",
+                        "severity": "MINOR",
+                        "involved_clients": ["prysm", "lighthouse"],
+                        "evidence": {},
+                    },
+                    {
+                        "workflow_id": "regular_sync",
+                        "state_id": "regular_sync.check",
+                        "transition_guard": "HasPeers",
+                        "diff_type": "B",
+                        "description": "Transition present in lighthouse but no equivalent in prysm",
+                        "severity": "MINOR",
+                        "involved_clients": ["lighthouse", "prysm"],
+                        "evidence": {},
+                    },
+                ],
+                "logic_diff_rate": 0.5,
+            },
+            "force_stopped": False,
+        }
+        path = write_diff_report(state)
+        content = path.read_text()
+        # Should only have B-1, not B-2 (deduped into one entry)
+        assert "B-1:" in content
+        assert "B-2:" not in content
 
     def test_write_diff_report_json(self):
         from file_io.writer import write_diff_report_json
@@ -193,6 +289,7 @@ class TestWriter:
                 "logic_diff_rate": 0.0,
             },
             "force_stopped": False,
+            "convergence_reason": "Zero A-class diffs",
             "iteration_history": [],
         }
         path = write_diff_report_json(state)
@@ -206,8 +303,13 @@ class TestWriter:
         assert "per_workflow_summary" in data
         assert "per_client_ranking" in data
         assert "agreement_workflows" in data
+        assert "convergence_reason" in data
         assert data["summary"]["a_class_count"] == 1
         assert data["summary"]["b_class_count"] == 0
+        assert "b_class_critical" in data["summary"]
+        assert "b_class_major" in data["summary"]
+        assert "b_class_minor" in data["summary"]
+        assert "total_transitions" in data["summary"]
 
     def test_write_diff_report_empty_diffs(self):
         from file_io.writer import write_diff_report

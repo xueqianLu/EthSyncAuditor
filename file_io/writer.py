@@ -80,8 +80,14 @@ def write_all_final_lsgs(state: dict[str, Any]) -> list[Path]:
 
 def _per_workflow_summary(
     a_diffs: list[dict], b_diffs: list[dict],
+    total_transitions: int = 0,
 ) -> list[dict]:
-    """Return per-workflow summary sorted by total diff count (descending)."""
+    """Return per-workflow summary sorted by total diff count (descending).
+
+    ``similarity`` reflects structural agreement: the proportion of
+    comparison items that are NOT B-class diffs.  A-class diffs (vocabulary
+    misalignment) do not reduce similarity because they are auto-resolved.
+    """
     wf_a: Counter = Counter()
     wf_b: Counter = Counter()
     for d in a_diffs:
@@ -90,12 +96,29 @@ def _per_workflow_summary(
         wf_b[d.get("workflow_id", "?")] += 1
 
     all_wfs = sorted(set(wf_a.keys()) | set(wf_b.keys()) | set(WORKFLOW_IDS))
+    total_b = sum(wf_b.values())
+
+    # Distribute total_transitions proportionally across workflows for
+    # similarity computation.  If not available, fall back to using total_b
+    # as denominator (similarity is then 0% for any workflow with B-class diffs).
     rows: list[dict] = []
     for wf in all_wfs:
         a = wf_a.get(wf, 0)
         b = wf_b.get(wf, 0)
         total = a + b
-        similarity = 1.0 - b / max(a + b, 1)
+        # Estimate per-workflow share of total_transitions proportionally
+        if total_transitions > 0 and total_b > 0:
+            # Allocate transitions proportionally to B-class count per workflow
+            wf_transitions = max(
+                int(total_transitions * (b / total_b)) if b > 0 else total_transitions // len(all_wfs),
+                b,  # floor: at least as many as B-class diffs
+            )
+        elif total_transitions > 0:
+            wf_transitions = total_transitions // max(len(all_wfs), 1)
+        else:
+            wf_transitions = max(a + b, 1)
+        similarity = 1.0 - b / max(wf_transitions, 1)
+        similarity = max(similarity, 0.0)
         rows.append({
             "workflow_id": wf,
             "a_class": a,
@@ -140,6 +163,85 @@ def _agreement_workflows(
     for d in b_diffs:
         diff_wfs.add(d.get("workflow_id", "?"))
     return sorted(wf for wf in WORKFLOW_IDS if wf not in diff_wfs)
+
+
+def _classify_severity_fallback(diff: dict) -> str:
+    """Fallback severity classification for B-class diffs missing the field."""
+    desc_lower = (diff.get("description", "") or "").lower()
+    state_id = diff.get("state_id", "")
+
+    if state_id.endswith(".*") or "stub" in desc_lower:
+        return "CRITICAL"
+    if "missing in" in desc_lower and "state category" in desc_lower:
+        return "CRITICAL"
+
+    minor_keywords = [
+        "present in", "but no equivalent", "not present in other",
+        "granularity", "not explicitly", "implicitly",
+    ]
+    if any(kw in desc_lower for kw in minor_keywords):
+        return "MINOR"
+    return "MAJOR"
+
+
+def _deduplicate_b_diffs(b_diffs: list[dict]) -> list[dict]:
+    """Deduplicate B-class diffs that describe the same structural difference.
+
+    Diffs are grouped by ``(workflow_id, state_id, transition_guard)``.
+    Within each group, entries whose descriptions describe opposite directions
+    of the same gap (e.g. "present in X but not Y" and "present in Y but not X")
+    are merged: ``involved_clients`` are unioned and descriptions concatenated.
+    """
+    from collections import OrderedDict
+
+    groups: OrderedDict[tuple, list[dict]] = OrderedDict()
+    for d in b_diffs:
+        key = (
+            d.get("workflow_id", "?"),
+            d.get("state_id", "?"),
+            d.get("transition_guard", "?"),
+        )
+        groups.setdefault(key, []).append(d)
+
+    deduped: list[dict] = []
+    for key, entries in groups.items():
+        if len(entries) == 1:
+            deduped.append(entries[0])
+            continue
+
+        # Merge: union involved_clients, pick highest severity, join descriptions
+        merged_clients: set[str] = set()
+        descriptions: list[str] = []
+        best_severity = "MINOR"
+        evidence: dict = {}
+        severity_rank = {"CRITICAL": 3, "MAJOR": 2, "MINOR": 1, "": 0}
+
+        seen_descs: set[str] = set()
+        for e in entries:
+            for c in e.get("involved_clients", []):
+                merged_clients.add(c)
+            desc = e.get("description", "")
+            if desc and desc not in seen_descs:
+                descriptions.append(desc)
+                seen_descs.add(desc)
+            sev = e.get("severity", "") or _classify_severity_fallback(e)
+            if severity_rank.get(sev, 0) > severity_rank.get(best_severity, 0):
+                best_severity = sev
+            if e.get("evidence"):
+                evidence.update(e["evidence"])
+
+        deduped.append({
+            "workflow_id": key[0],
+            "state_id": key[1],
+            "transition_guard": key[2],
+            "diff_type": "B",
+            "description": " | ".join(descriptions) if len(descriptions) > 1 else (descriptions[0] if descriptions else ""),
+            "severity": best_severity,
+            "involved_clients": sorted(merged_clients),
+            "evidence": evidence,
+        })
+
+    return deduped
 
 
 def _generate_executive_summary(
@@ -210,7 +312,7 @@ def write_diff_report(state: dict[str, Any]) -> Path:
     3. Per-Workflow Summary
     4. Per-Client Deviation Ranking
     5. A-Class Vocabulary Alignment Diffs
-    6. B-Class Structural Logic Differences
+    6. B-Class Structural Logic Differences (grouped by severity)
     7. Agreement (fully matching workflows)
     8. Iteration Trend (if available)
     """
@@ -218,14 +320,24 @@ def write_diff_report(state: dict[str, Any]) -> Path:
     path = config.OUTPUT_PATH / "Audit_Diff_Report.md"
 
     diff_report = state.get("diff_report", {})
-    b_diffs = diff_report.get("b_class_diffs", [])
+    b_diffs_raw = diff_report.get("b_class_diffs", [])
     a_diffs = diff_report.get("a_class_diffs", [])
     logic_diff_rate = diff_report.get("logic_diff_rate", 0.0)
+    total_transitions = diff_report.get("total_transitions", 0)
     force_stopped = state.get("force_stopped", False)
+    convergence_reason = state.get("convergence_reason", "")
     iteration_history = state.get("iteration_history", [])
 
+    # ── Deduplicate B-class diffs ──────────────────────────────────────
+    b_diffs = _deduplicate_b_diffs(b_diffs_raw)
+
+    # ── Ensure all B-class diffs have severity ─────────────────────────
+    for d in b_diffs:
+        if not d.get("severity"):
+            d["severity"] = _classify_severity_fallback(d)
+
     # ── Compute analytics ──────────────────────────────────────────────
-    wf_summary = _per_workflow_summary(a_diffs, b_diffs)
+    wf_summary = _per_workflow_summary(a_diffs, b_diffs, total_transitions)
     client_ranking = _per_client_ranking(a_diffs, b_diffs)
     agreement_wfs = _agreement_workflows(a_diffs, b_diffs)
     exec_summary = _generate_executive_summary(
@@ -238,8 +350,10 @@ def write_diff_report(state: dict[str, Any]) -> Path:
         f"**Generated at**: {datetime.now(timezone.utc).isoformat()}",
         f"**Logic Diff Rate (B-class)**: {logic_diff_rate:.4f}",
         f"**Force Stopped**: {force_stopped}",
-        "",
     ]
+    if convergence_reason:
+        lines.append(f"**Convergence Reason**: {convergence_reason}")
+    lines.append("")
 
     # ── 1. Executive Summary ───────────────────────────────────────────
     lines.extend([
@@ -250,6 +364,8 @@ def write_diff_report(state: dict[str, Any]) -> Path:
     ])
 
     # ── 2. Summary Table ───────────────────────────────────────────────
+    # Count B-class by severity
+    sev_counts = Counter(d.get("severity", "MAJOR") for d in b_diffs)
     lines.extend([
         "## Summary",
         "",
@@ -257,6 +373,9 @@ def write_diff_report(state: dict[str, Any]) -> Path:
         "|--------|-------|",
         f"| A-class (vocabulary alignment) diffs | {len(a_diffs)} |",
         f"| B-class (structural logic) diffs | {len(b_diffs)} |",
+        f"| — 🔴 CRITICAL | {sev_counts.get('CRITICAL', 0)} |",
+        f"| — 🟠 MAJOR | {sev_counts.get('MAJOR', 0)} |",
+        f"| — 🟡 MINOR | {sev_counts.get('MINOR', 0)} |",
         f"| Total diffs | {len(a_diffs) + len(b_diffs)} |",
         f"| Workflows with full agreement | {len(agreement_wfs)} |",
         "",
@@ -322,7 +441,7 @@ def write_diff_report(state: dict[str, Any]) -> Path:
             "",
         ])
 
-    # ── 6. B-Class Structural Logic Differences ────────────────────────
+    # ── 6. B-Class Structural Logic Differences (by severity) ──────────
     if b_diffs:
         lines.extend([
             "## B-Class Structural Logic Differences",
@@ -332,29 +451,45 @@ def write_diff_report(state: dict[str, Any]) -> Path:
             "architectural choices, not naming inconsistencies.",
             "",
         ])
-        for i, diff in enumerate(b_diffs, 1):
-            lines.append(
-                f"### B-{i}: {diff.get('workflow_id', '?')} / "
-                f"{diff.get('state_id', '?')}"
-            )
-            lines.append("")
-            lines.append(f"- **Guard**: `{diff.get('transition_guard', '?')}`")
-            lines.append(
-                f"- **Clients involved**: "
-                f"{', '.join(diff.get('involved_clients', []))}"
-            )
-            lines.append(f"- **Description**: {diff.get('description', '')}")
-            evidence = diff.get("evidence", {})
-            if evidence:
-                lines.append("- **Evidence**:")
-                for client, ev in evidence.items():
-                    if ev:
-                        lines.append(
-                            f"  - {client}: `{ev.get('file', '?')}` → "
-                            f"`{ev.get('function', '?')}` "
-                            f"L{ev.get('lines', [])}"
-                        )
-            lines.append("")
+
+        severity_order = [
+            ("CRITICAL", "🔴 Critical — Missing Workflows / State Categories"),
+            ("MAJOR", "🟠 Major — Behavioral Divergences"),
+            ("MINOR", "🟡 Minor — Extra/Missing Transitions, Granularity Differences"),
+        ]
+        b_idx = 1
+        for sev_key, sev_label in severity_order:
+            sev_diffs = [d for d in b_diffs if d.get("severity") == sev_key]
+            if not sev_diffs:
+                continue
+            lines.extend([
+                f"### {sev_label} ({len(sev_diffs)})",
+                "",
+            ])
+            for diff in sev_diffs:
+                lines.append(
+                    f"#### B-{b_idx}: {diff.get('workflow_id', '?')} / "
+                    f"{diff.get('state_id', '?')}"
+                )
+                lines.append("")
+                lines.append(f"- **Guard**: `{diff.get('transition_guard', '?')}`")
+                lines.append(
+                    f"- **Clients involved**: "
+                    f"{', '.join(diff.get('involved_clients', []))}"
+                )
+                lines.append(f"- **Description**: {diff.get('description', '')}")
+                evidence = diff.get("evidence", {})
+                if evidence:
+                    lines.append("- **Evidence**:")
+                    for client, ev in evidence.items():
+                        if ev:
+                            lines.append(
+                                f"  - {client}: `{ev.get('file', '?')}` → "
+                                f"`{ev.get('function', '?')}` "
+                                f"L{ev.get('lines', [])}"
+                            )
+                lines.append("")
+                b_idx += 1
     else:
         lines.extend([
             "## B-Class Structural Logic Differences",
@@ -422,28 +557,43 @@ def write_diff_report_json(state: dict[str, Any]) -> Path:
     path = config.OUTPUT_PATH / "Audit_Diff_Report.json"
 
     diff_report = state.get("diff_report", {})
-    b_diffs = diff_report.get("b_class_diffs", [])
+    b_diffs_raw = diff_report.get("b_class_diffs", [])
     a_diffs = diff_report.get("a_class_diffs", [])
     logic_diff_rate = diff_report.get("logic_diff_rate", 0.0)
+    total_transitions = diff_report.get("total_transitions", 0)
     force_stopped = state.get("force_stopped", False)
+    convergence_reason = state.get("convergence_reason", "")
     iteration_history = state.get("iteration_history", [])
 
-    wf_summary = _per_workflow_summary(a_diffs, b_diffs)
+    # Deduplicate and ensure severity
+    b_diffs = _deduplicate_b_diffs(b_diffs_raw)
+    for d in b_diffs:
+        if not d.get("severity"):
+            d["severity"] = _classify_severity_fallback(d)
+
+    wf_summary = _per_workflow_summary(a_diffs, b_diffs, total_transitions)
     client_ranking = _per_client_ranking(a_diffs, b_diffs)
     agreement_wfs = _agreement_workflows(a_diffs, b_diffs)
     exec_summary = _generate_executive_summary(
         a_diffs, b_diffs, wf_summary, client_ranking, agreement_wfs, force_stopped,
     )
 
+    sev_counts = Counter(d.get("severity", "MAJOR") for d in b_diffs)
+
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "logic_diff_rate": logic_diff_rate,
         "force_stopped": force_stopped,
+        "convergence_reason": convergence_reason,
         "executive_summary": exec_summary,
         "summary": {
             "a_class_count": len(a_diffs),
             "b_class_count": len(b_diffs),
+            "b_class_critical": sev_counts.get("CRITICAL", 0),
+            "b_class_major": sev_counts.get("MAJOR", 0),
+            "b_class_minor": sev_counts.get("MINOR", 0),
             "total_diffs": len(a_diffs) + len(b_diffs),
+            "total_transitions": total_transitions,
             "agreement_workflows": len(agreement_wfs),
         },
         "per_workflow_summary": wf_summary,
