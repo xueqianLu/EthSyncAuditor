@@ -91,6 +91,9 @@ def make_initial_state() -> dict[str, Any]:
         "converged_phase1": False,
         "converged_phase2": False,
         "force_stopped": False,
+        "a_class_count": -1,
+        "prev_a_class_count": -1,
+        "iteration_history": [],
         "preprocess_done": False,
         "preprocess_status": {},
         "audit_log_paths": [],
@@ -249,7 +252,8 @@ def phase2_main_agent_node(state: GlobalState) -> dict[str, Any]:
 
     Delegates to the agent factory from ``agents.phase2_main_agent``.
     Compares client LSGs, classifies diffs, computes logic_diff_rate.
-    Saves a checkpoint after every iteration.
+    Saves a checkpoint after every iteration.  Records iteration metrics
+    into ``iteration_history`` for trend tracking and oscillation detection.
     """
     from agents.phase2_main_agent import build_phase2_main_agent
     from file_io.checkpoint import save_checkpoint
@@ -264,6 +268,17 @@ def phase2_main_agent_node(state: GlobalState) -> dict[str, Any]:
 
     agent_fn = build_phase2_main_agent(llm=_get_llm(), callbacks=_get_callbacks())
     result = agent_fn(state)
+
+    # ── Record iteration metrics for trend tracking ─────────────────────
+    diff_report = result.get("diff_report", {})
+    a_count = result.get("a_class_count", len(diff_report.get("a_class_diffs", [])))
+    b_count = len(diff_report.get("b_class_diffs", []))
+    result["iteration_history"] = [{
+        "iteration": iteration,
+        "a_class_count": a_count,
+        "b_class_count": b_count,
+        "logic_diff_rate": result.get("logic_diff_rate", 0.0),
+    }]
 
     # Per-iteration checkpoint
     merged_state = {**state, **result}
@@ -360,18 +375,56 @@ def phase2_fanout(state: GlobalState) -> list[Send]:
 
 
 def route_after_phase2_main(state: GlobalState) -> str:
-    """Convergence / max-iter check for Phase 2."""
-    iteration = state.get("phase2_iteration", 1)
-    logic_diff_rate = state.get("logic_diff_rate", 1.0)
+    """Convergence / max-iter check for Phase 2.
 
-    if logic_diff_rate < config.CONVERGENCE_THRESHOLD:
+    Phase 2 converges when A-class diffs (vocabulary misalignment) stabilize,
+    NOT when B-class diffs (inherent design differences) disappear — B-class
+    diffs are the desired output of the audit, not a convergence signal.
+
+    Convergence criteria (any one triggers):
+    1. ``a_class_count == 0`` — perfect vocabulary alignment.
+    2. A-class **delta** between consecutive iterations < threshold.
+    3. **Oscillation** detected — A-class count oscillates within a narrow band
+       for ``OSCILLATION_WINDOW`` consecutive iterations.
+    """
+    iteration = state.get("phase2_iteration", 1)
+    a_class_count = state.get("a_class_count", -1)
+    prev_a_class_count = state.get("prev_a_class_count", -1)
+    history = state.get("iteration_history", [])
+
+    # ── Criterion 1: zero A-class diffs ────────────────────────────────
+    if a_class_count == 0:
         logger.info(
-            "[router_phase2] CONVERGED at iter=%d logic_diff_rate=%.4f",
+            "[router_phase2] CONVERGED at iter=%d — zero A-class diffs",
             iteration,
-            logic_diff_rate,
         )
         return "phase2_converged"
 
+    # ── Criterion 2: A-class delta stabilization ───────────────────────
+    if prev_a_class_count >= 0 and a_class_count >= 0:
+        delta = abs(a_class_count - prev_a_class_count)
+        delta_rate = delta / max(prev_a_class_count, 1)
+        if delta_rate < config.P2_A_CLASS_CONVERGENCE_THRESHOLD:
+            logger.info(
+                "[router_phase2] CONVERGED at iter=%d — A-class delta "
+                "stabilized (prev=%d, cur=%d, delta_rate=%.4f)",
+                iteration, prev_a_class_count, a_class_count, delta_rate,
+            )
+            return "phase2_converged"
+
+    # ── Criterion 3: oscillation detection ─────────────────────────────
+    if len(history) >= config.OSCILLATION_WINDOW:
+        recent = history[-config.OSCILLATION_WINDOW:]
+        recent_a = [h.get("a_class_count", 0) for h in recent]
+        if max(recent_a) - min(recent_a) <= config.OSCILLATION_BAND:
+            logger.info(
+                "[router_phase2] CONVERGED at iter=%d — A-class oscillation "
+                "detected over last %d iters: %s",
+                iteration, config.OSCILLATION_WINDOW, recent_a,
+            )
+            return "phase2_converged"
+
+    # ── MAX_ITER guard ─────────────────────────────────────────────────
     if iteration >= config.MAX_ITER_PHASE2:
         logger.warning(
             "[router_phase2] MAX_ITER reached (%d) — force stopping Phase 2",
@@ -383,8 +436,11 @@ def route_after_phase2_main(state: GlobalState) -> str:
 
 
 def phase2_next_iter_node(state: GlobalState) -> dict[str, Any]:
-    """Bump Phase 2 iteration counter."""
-    return {"phase2_iteration": state.get("phase2_iteration", 1) + 1}
+    """Bump Phase 2 iteration counter and carry forward prev_a_class_count."""
+    return {
+        "phase2_iteration": state.get("phase2_iteration", 1) + 1,
+        "prev_a_class_count": state.get("a_class_count", -1),
+    }
 
 
 def phase2_converged_node(state: GlobalState) -> dict[str, Any]:

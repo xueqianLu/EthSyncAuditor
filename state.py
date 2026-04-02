@@ -248,6 +248,11 @@ class GlobalState(TypedDict, total=False):
     converged_phase2: bool
     force_stopped: bool
 
+    # ── Phase 2 convergence tracking ─────────────────────────────────────
+    a_class_count: Annotated[int, _replace]          # current iteration A-class diff count
+    prev_a_class_count: Annotated[int, _replace]     # previous iteration A-class diff count
+    iteration_history: Annotated[list[dict], _merge_lists]  # per-iter metrics
+
     # ── Preprocessing ───────────────────────────────────────────────────
     preprocess_done: bool
     preprocess_status: Annotated[dict[str, dict], _merge_dicts]
@@ -257,5 +262,5 @@ class GlobalState(TypedDict, total=False):
 
     # ── Inter‑agent communication ───────────────────────────────────────
     discovery_reports: Annotated[list[dict], _merge_lists]
-    a_class_feedback: Annotated[list[dict], _merge_lists]
+    a_class_feedback: Annotated[list[dict], _replace]
     sparsity_hints: Annotated[list[dict], _replace]

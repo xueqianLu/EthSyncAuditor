@@ -131,6 +131,7 @@ def build_phase2_main_agent(llm=None, callbacks=None):
                     "diff_report": report.model_dump(),
                     "logic_diff_rate": report.logic_diff_rate,
                     "a_class_feedback": a_feedback,
+                    "a_class_count": len(report.a_class_diffs),
                     "sparsity_hints": sparsity_hints,
                 }
             except Exception:
@@ -384,6 +385,7 @@ def _deterministic_compare(
         },
         "logic_diff_rate": logic_diff_rate,
         "a_class_feedback": a_diffs,
+        "a_class_count": len(a_diffs),
         "sparsity_hints": sparsity_hints,
     }
 

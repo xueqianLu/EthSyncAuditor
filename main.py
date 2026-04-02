@@ -41,6 +41,7 @@ from file_io.checkpoint import (
 from file_io.writer import (
     write_all_final_lsgs,
     write_diff_report,
+    write_diff_report_json,
     write_enriched_spec,
 )
 from graph import compile_graph, configure_graph, make_initial_state
@@ -295,6 +296,7 @@ def main() -> None:
     if phase >= 2:
         write_all_final_lsgs(final_state)
         write_diff_report(final_state)
+        write_diff_report_json(final_state)
 
     # ── Save final checkpoint ─────────────────────────────────────────
     save_checkpoint(

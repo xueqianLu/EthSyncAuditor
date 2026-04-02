@@ -19,6 +19,9 @@ Below is the complete field specification.
 | `client_lsgs` | `dict[str, dict]` | `{}` | `phase2_sub_agent` (merge) | `phase2_main_agent`, writer |
 | `diff_report` | `dict` | `{}` | `phase2_main_agent` | `router_phase2`, writer |
 | `logic_diff_rate` | `float` | `1.0` | `phase2_main_agent` | `router_phase2` |
+| `a_class_count` | `int` | `-1` | `phase2_main_agent` | `router_phase2` |
+| `prev_a_class_count` | `int` | `-1` | `phase2_next_iter` | `router_phase2` |
+| `iteration_history` | `list[dict]` | `[]` | `phase2_main_agent` (merge) | `router_phase2`, writer |
 | `converged_phase1` | `bool` | `False` | `router_phase1` | Graph routing |
 | `converged_phase2` | `bool` | `False` | `router_phase2` | Graph routing |
 | `force_stopped` | `bool` | `False` | Routers | Exit nodes |
@@ -70,7 +73,7 @@ graph TD
     P2_SUB_tk --> P2_MAIN
     P2_SUB_ls --> P2_MAIN
 
-    P2_MAIN -->|logic_diff_rate < 0.05| P2_CONV[phase2_converged]
+    P2_MAIN -->|A-class stabilized| P2_CONV[phase2_converged]
     P2_MAIN -->|iter >= MAX_ITER| P2_STOP[phase2_force_stop]
     P2_MAIN -->|else| P2_NEXT[phase2_next_iter]
 
@@ -100,7 +103,7 @@ graph TD
 | `phase1_next_iter` | Always | `phase1_fanout` (loop) |
 | `phase1_converged` | Always | `phase2_fanout` |
 | `phase1_force_stop` | Always | `phase2_fanout` |
-| `phase2_main_agent` | `logic_diff_rate < 0.05` | `phase2_converged` |
+| `phase2_main_agent` | `a_class_count == 0` OR A-class delta stable OR oscillation detected | `phase2_converged` |
 | `phase2_main_agent` | `iteration >= MAX_ITER_PHASE2` | `phase2_force_stop` |
 | `phase2_main_agent` | Otherwise | `phase2_next_iter` |
 | `phase2_next_iter` | Always | `phase2_fanout` (loop) |
@@ -130,7 +133,8 @@ output/
 ├── LSG_grandine_final.yaml
 ├── LSG_teku_final.yaml
 ├── LSG_lodestar_final.yaml
-└── Audit_Diff_Report.md            # Phase 2 diff report
+└── Audit_Diff_Report.md            # Phase 2 diff report (enriched Markdown)
+└── Audit_Diff_Report.json          # Phase 2 diff report (structured JSON)
 ```
 
 ---

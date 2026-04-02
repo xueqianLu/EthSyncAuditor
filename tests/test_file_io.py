@@ -129,7 +129,17 @@ class TestWriter:
 
         state = {
             "diff_report": {
-                "a_class_diffs": [],
+                "a_class_diffs": [
+                    {
+                        "workflow_id": "initial_sync",
+                        "state_id": "initial_sync.init",
+                        "transition_guard": "OldGuard",
+                        "diff_type": "A",
+                        "description": "In prysm: rename guard `OldGuard` → `NewGuard`",
+                        "involved_clients": ["prysm", "lighthouse"],
+                        "evidence": {},
+                    }
+                ],
                 "b_class_diffs": [
                     {
                         "workflow_id": "initial_sync",
@@ -144,12 +154,76 @@ class TestWriter:
                 "logic_diff_rate": 0.1,
             },
             "force_stopped": False,
+            "iteration_history": [
+                {"iteration": 1, "a_class_count": 3, "b_class_count": 5, "logic_diff_rate": 0.5},
+                {"iteration": 2, "a_class_count": 1, "b_class_count": 5, "logic_diff_rate": 0.4},
+            ],
         }
         path = write_diff_report(state)
         assert path.exists()
         content = path.read_text()
+        # Verify enriched sections
+        assert "Executive Summary" in content
+        assert "Per-Workflow Summary" in content
+        assert "Per-Client Deviation Ranking" in content
+        assert "A-Class Vocabulary Alignment Diffs" in content
+        assert "B-Class Structural Logic Differences" in content
+        assert "Agreement" in content
+        assert "Iteration Trend" in content
         assert "initial_sync" in content
-        assert "B-Class" in content
+        assert "OldGuard" in content  # A-class diff shown
+
+    def test_write_diff_report_json(self):
+        from file_io.writer import write_diff_report_json
+
+        state = {
+            "diff_report": {
+                "a_class_diffs": [
+                    {
+                        "workflow_id": "regular_sync",
+                        "state_id": "regular_sync.init",
+                        "transition_guard": "X",
+                        "diff_type": "A",
+                        "description": "rename",
+                        "involved_clients": ["prysm"],
+                        "evidence": {},
+                    }
+                ],
+                "b_class_diffs": [],
+                "logic_diff_rate": 0.0,
+            },
+            "force_stopped": False,
+            "iteration_history": [],
+        }
+        path = write_diff_report_json(state)
+        assert path.exists()
+        assert path.suffix == ".json"
+
+        import json
+        with open(path) as f:
+            data = json.load(f)
+        assert "executive_summary" in data
+        assert "per_workflow_summary" in data
+        assert "per_client_ranking" in data
+        assert "agreement_workflows" in data
+        assert data["summary"]["a_class_count"] == 1
+        assert data["summary"]["b_class_count"] == 0
+
+    def test_write_diff_report_empty_diffs(self):
+        from file_io.writer import write_diff_report
+
+        state = {
+            "diff_report": {
+                "a_class_diffs": [],
+                "b_class_diffs": [],
+                "logic_diff_rate": 0.0,
+            },
+            "force_stopped": False,
+        }
+        path = write_diff_report(state)
+        content = path.read_text()
+        assert "No vocabulary misalignment detected" in content
+        assert "No structural logic differences found" in content
 
 
 # ── Audit Logger ────────────────────────────────────────────────────────

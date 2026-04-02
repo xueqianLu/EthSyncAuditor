@@ -35,6 +35,7 @@ def test_make_initial_state_fields():
         "guards", "actions", "vocab_version", "diff_rate",
         "client_lsgs", "diff_report", "logic_diff_rate",
         "converged_phase1", "converged_phase2", "force_stopped",
+        "a_class_count", "prev_a_class_count", "iteration_history",
         "preprocess_done", "preprocess_status",
         "audit_log_paths", "discovery_reports", "a_class_feedback",
     }
@@ -151,21 +152,47 @@ def test_route_phase1_force_stop():
 
 
 def test_route_phase2_converged():
+    """Converge when a_class_count == 0."""
     state = make_initial_state()
-    state["logic_diff_rate"] = 0.0
+    state["a_class_count"] = 0
+    assert route_after_phase2_main(state) == "phase2_converged"
+
+
+def test_route_phase2_converged_delta_stable():
+    """Converge when A-class count delta between iterations is small."""
+    state = make_initial_state()
+    state["a_class_count"] = 10
+    state["prev_a_class_count"] = 10  # delta = 0 → below threshold
+    state["phase2_iteration"] = 3
+    assert route_after_phase2_main(state) == "phase2_converged"
+
+
+def test_route_phase2_converged_oscillation():
+    """Converge when A-class count oscillates within a narrow band."""
+    state = make_initial_state()
+    state["a_class_count"] = 12
+    state["prev_a_class_count"] = -1  # skip delta check
+    state["phase2_iteration"] = 5
+    state["iteration_history"] = [
+        {"iteration": 3, "a_class_count": 11, "b_class_count": 40, "logic_diff_rate": 0.7},
+        {"iteration": 4, "a_class_count": 12, "b_class_count": 40, "logic_diff_rate": 0.7},
+        {"iteration": 5, "a_class_count": 11, "b_class_count": 40, "logic_diff_rate": 0.7},
+    ]
     assert route_after_phase2_main(state) == "phase2_converged"
 
 
 def test_route_phase2_force_stop():
     state = make_initial_state()
-    state["logic_diff_rate"] = 0.5
+    state["a_class_count"] = 20  # not zero
+    state["prev_a_class_count"] = -1  # skip delta check
     state["phase2_iteration"] = _config.MAX_ITER_PHASE2
     assert route_after_phase2_main(state) == "phase2_force_stop"
 
 
 def test_route_phase2_next_iter():
     state = make_initial_state()
-    state["logic_diff_rate"] = 0.5
+    state["a_class_count"] = 20
+    state["prev_a_class_count"] = -1  # skip delta check
     state["phase2_iteration"] = 1
     assert route_after_phase2_main(state) == "phase2_next_iter"
 
@@ -208,8 +235,10 @@ def test_phase1_next_iter_bumps():
 def test_phase2_next_iter_bumps():
     state = make_initial_state()
     state["phase2_iteration"] = 5
+    state["a_class_count"] = 15
     result = phase2_next_iter_node(state)
     assert result["phase2_iteration"] == 6
+    assert result["prev_a_class_count"] == 15
 
 
 # ── End-to-end pipeline ────────────────────────────────────────────────
