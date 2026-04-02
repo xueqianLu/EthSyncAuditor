@@ -184,6 +184,37 @@ def _classify_severity_fallback(diff: dict) -> str:
     return "MAJOR"
 
 
+# Canonical severity values.
+_VALID_SEVERITIES = {"CRITICAL", "MAJOR", "MINOR"}
+
+# Map common non-standard LLM outputs to canonical values (case-insensitive).
+_SEVERITY_ALIASES: dict[str, str] = {
+    "high": "MAJOR",
+    "medium": "MINOR",
+    "low": "MINOR",
+    "severe": "CRITICAL",
+    "critical": "CRITICAL",
+    "major": "MAJOR",
+    "minor": "MINOR",
+}
+
+
+def _normalize_severity(diff: dict) -> str:
+    """Return a canonical severity for *diff*, normalizing LLM quirks.
+
+    If the value is already canonical (``CRITICAL``/``MAJOR``/``MINOR``),
+    return it as-is.  Otherwise try alias lookup, then fall back to the
+    heuristic classifier.
+    """
+    raw = (diff.get("severity") or "").strip()
+    if raw in _VALID_SEVERITIES:
+        return raw
+    mapped = _SEVERITY_ALIASES.get(raw.lower())
+    if mapped:
+        return mapped
+    return _classify_severity_fallback(diff)
+
+
 def _deduplicate_b_diffs(b_diffs: list[dict]) -> list[dict]:
     """Deduplicate B-class diffs that describe the same structural difference.
 
@@ -224,7 +255,7 @@ def _deduplicate_b_diffs(b_diffs: list[dict]) -> list[dict]:
             if desc and desc not in seen_descs:
                 descriptions.append(desc)
                 seen_descs.add(desc)
-            sev = e.get("severity", "") or _classify_severity_fallback(e)
+            sev = _normalize_severity(e)
             if severity_rank.get(sev, 0) > severity_rank.get(best_severity, 0):
                 best_severity = sev
             if e.get("evidence"):
@@ -331,10 +362,9 @@ def write_diff_report(state: dict[str, Any]) -> Path:
     # ── Deduplicate B-class diffs ──────────────────────────────────────
     b_diffs = _deduplicate_b_diffs(b_diffs_raw)
 
-    # ── Ensure all B-class diffs have severity ─────────────────────────
+    # ── Ensure all B-class diffs have canonical severity ─────────────
     for d in b_diffs:
-        if not d.get("severity"):
-            d["severity"] = _classify_severity_fallback(d)
+        d["severity"] = _normalize_severity(d)
 
     # ── Compute analytics ──────────────────────────────────────────────
     wf_summary = _per_workflow_summary(a_diffs, b_diffs, total_transitions)
@@ -565,11 +595,10 @@ def write_diff_report_json(state: dict[str, Any]) -> Path:
     convergence_reason = state.get("convergence_reason", "")
     iteration_history = state.get("iteration_history", [])
 
-    # Deduplicate and ensure severity
+    # Deduplicate and normalize severity
     b_diffs = _deduplicate_b_diffs(b_diffs_raw)
     for d in b_diffs:
-        if not d.get("severity"):
-            d["severity"] = _classify_severity_fallback(d)
+        d["severity"] = _normalize_severity(d)
 
     wf_summary = _per_workflow_summary(a_diffs, b_diffs, total_transitions)
     client_ranking = _per_client_ranking(a_diffs, b_diffs)

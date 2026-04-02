@@ -34,6 +34,12 @@ modules to discover Guards and Actions that the vocabulary may be missing.
    switches to regular_sync.
    Search: peer selection/scoring, range request pipelines, batch validation, fork-choice updates,
    sync progress tracking, timeout/retry logic.
+   🔑 **Critical Guards/Actions to Discover:**
+   - Look for guards related to blob availability during range sync (e.g., `BlobsAreAvailable`, `BlobSidecarReceived`, `BlobSidecarsByRangeResponseReceived`)
+   - Look for stall detection guards (e.g., `SyncIsStalled`, `NoProgressForNSlots`) and recovery actions (e.g., `ResetSyncChain`, `SelectAlternatePeer`)
+   - Look for reorg-related guards during sync (e.g., `FinalizedCheckpointChanged`, `ChainReorgDetected`)
+   - Look for optimistic-mode guards during batch import (e.g., `ELIsSyncing`, `OptimisticImportAllowed`)
+   - Look for peer scoring actions on batch validation failure (e.g., `DecreasePeerScore`, `BanPeer`, `MaxPeerPenaltiesReached`)
 {% if language == "Go" %}   Hint: `beacon-chain/sync/initial-sync/`, `blocksFetcher`, `*Service`{% endif %}
 {% if language == "Rust" and client_name == "lighthouse" %}   Hint: `beacon_node/network/src/sync/range_sync/`, `RangeSync`, `SyncingChain`{% endif %}
 {% if language == "Rust" and client_name == "grandine" %}   Hint: `fork_choice_control/`, sync manager{% endif %}
@@ -45,6 +51,12 @@ modules to discover Guards and Actions that the vocabulary may be missing.
    imports them, updates fork-choice. Falls back to range sync if too far behind.
    Search: gossip message handlers, block/attestation validation, fork-choice update, missing
    parent handling (`BeaconBlocksByRoot`), peer penalization.
+   🔑 **Critical Guards/Actions to Discover:**
+   - Look for blob-related gossip guards (e.g., `BlobsAreAvailable`, `BlobSidecarIsValid`, `BlobSidecarReceivedForBlock`)
+   - Look for reorg detection guards (e.g., `NewHeadIsOnDifferentFork`, `ReorgDepthExceedsN`) and actions (e.g., `ReorganizeChain`, `EmitChainReorgEvent`)
+   - Look for range sync fallback guards (e.g., `HeadSlotLagExceedsThreshold`, `FallBackToRangeSync`)
+   - Look for proposer boost guards (e.g., `IsTimelyBlock`, `ProposerBoostApplied`)
+   - Look for future block handling guards (e.g., `BlockIsFromFutureSlot`, `QueueFutureBlock`)
 {% if language == "Go" %}   Hint: `beacon-chain/sync/`, `receiveBlock`, `receiveAttestation`{% endif %}
 {% if language == "Rust" and client_name == "lighthouse" %}   Hint: `beacon_node/network/src/sync/`, `NetworkBeaconProcessor`{% endif %}
 {% if language == "Rust" and client_name == "grandine" %}   Hint: `fork_choice_control/`, `eth2_libp2p/`{% endif %}
@@ -55,6 +67,11 @@ modules to discover Guards and Actions that the vocabulary may be missing.
    fetched via Beacon API or peer. Node verifies state root, initializes fork-choice from
    the anchor, syncs forward to head, then optionally backfills historical blocks toward genesis.
    Search: checkpoint fetching, state root verification, anchor initialization, backfill logic.
+   🔑 **Critical Guards/Actions to Discover:**
+   - Look for WS validation guards (e.g., `WeakSubjectivityCheckFailed`, `CheckpointIsWithinWSPeriod`)
+   - Look for checkpoint retry guards (e.g., `MaxCheckpointRetriesReached`, `CheckpointSourceUnreachable`)
+   - Look for backfill-specific guards (e.g., `BackfillComplete`, `DataAvailabilityBoundaryReached`)
+   - Look for anchor initialization actions (e.g., `InitializeAnchorState`, `InitializeForkChoiceFromAnchor`)
 {% if language == "Go" %}   Hint: `beacon-chain/sync/checkpoint/`, `--checkpoint-sync-url`{% endif %}
 {% if language == "Rust" and client_name == "lighthouse" %}   Hint: `beacon_node/src/cli.rs`, `beacon_node/network/src/sync/backfill_sync/`{% endif %}
 {% if language == "Rust" and client_name == "grandine" %}   Hint: `grandine/src/`, checkpoint init path{% endif %}
@@ -66,6 +83,11 @@ modules to discover Guards and Actions that the vocabulary may be missing.
    BLS key (with slashing protection), publishes to the assigned attestation subnet.
    Search: attester duty fetching, attestation data construction, BLS signing, slashing DB,
    subnet publishing.
+   🔑 **Critical Guards/Actions to Discover:**
+   - Look for slashing protection guards (e.g., `AttestationIsNotSlashable`, `SlashingDBCheckPassed`) and their failure handling
+   - Look for beacon node connectivity guards (e.g., `BeaconNodeIsReachable`, `AttestationDataTimedOut`)
+   - Look for subnet management actions (e.g., `SubscribeToSubnet`, `ManagePersistentSubnets`)
+   - Look for Electra/EIP-7549 related guards or format changes in attestation construction
 {% if language == "Go" %}   Hint: `validator/client/attest.go`, `submitAttestation`, `createAttestation`{% endif %}
 {% if language == "Rust" and client_name == "lighthouse" %}   Hint: `validator_client/src/attestation_service.rs`{% endif %}
 {% if language == "Rust" and client_name == "grandine" %}   Hint: validator crate, attestation production{% endif %}
@@ -78,6 +100,11 @@ modules to discover Guards and Actions that the vocabulary may be missing.
    slashings, sync aggregate, execution payload, blob KZG commitments post-Deneb), signs with
    proposer key (slashing protection), broadcasts via gossip.
    Search: proposer duty, execution payload retrieval, block assembly, BLS signing, gossip broadcast.
+   🔑 **Critical Guards/Actions to Discover:**
+   - Look for builder API decision guards (e.g., `BuilderBidIsReceivedAndValid`, `BuilderApiTimeout`, `CircuitBreakerTripped`) and actions (e.g., `RequestBuilderBid`, `FallbackToLocalPayload`)
+   - Look for blob-related actions (e.g., `GenerateKzgCommitments`, `AttachBlobSidecars`, `PublishBlobSidecars`)
+   - Look for block slashing protection guards (e.g., `BlockIsNotSlashable`, `SlotAlreadySigned`)
+   - Look for payload retrieval timeout handling (e.g., `GetPayloadTimedOut`, `UseLocalFallbackPayload`)
 {% if language == "Go" %}   Hint: `validator/client/propose.go`, `ProposeBlock`, beacon-side `proposer.go`{% endif %}
 {% if language == "Rust" and client_name == "lighthouse" %}   Hint: `validator_client/src/block_service.rs`, `beacon_node/execution_layer/`{% endif %}
 {% if language == "Rust" and client_name == "grandine" %}   Hint: `block_producer/`{% endif %}
@@ -90,6 +117,11 @@ modules to discover Guards and Actions that the vocabulary may be missing.
    signs, publishes to global `beacon_aggregate_and_proof` topic.
    Search: aggregator selection check, subnet subscription, attestation collection, aggregate
    computation, aggregate signing/publishing.
+   🔑 **Critical Guards/Actions to Discover:**
+   - Look for aggregator selection guards/actions (e.g., `SelectedAsAggregator`, `ComputeAggregatorSelectionProof`)
+   - Look for attestation equivalence guards (e.g., `AttestationDataIsEquivalentForAggregation`)
+   - Look for empty aggregate handling guards (e.g., `NoAttestationsCollected`, `SkipEmptyAggregate`)
+   - Look for self-attestation inclusion actions (e.g., `IncludeOwnAttestation`)
 {% if language == "Go" %}   Hint: `validator/client/aggregate.go`, `SubmitAggregateAndProof`{% endif %}
 {% if language == "Rust" and client_name == "lighthouse" %}   Hint: `validator_client/src/attestation_service.rs` (aggregation section){% endif %}
 {% if language == "Rust" and client_name == "grandine" %}   Hint: aggregation pool, validator event loop{% endif %}
@@ -103,6 +135,12 @@ modules to discover Guards and Actions that the vocabulary may be missing.
    invalidate block + descendants, rollback fork-choice head.
    Search: Engine API calls, newPayload/forkchoiceUpdated handling, optimistic import logic,
    payload status processing, rollback/reorg on INVALID.
+   🔑 **Critical Guards/Actions to Discover:**
+   - Look for INVALID cascade actions (e.g., `InvalidateDescendants`, `InvalidateBlock`, `RollbackToLastValidAncestor`)
+   - Look for EL status distinction guards (e.g., `PayloadStatusIsSyncing`, `PayloadStatusIsAccepted`) — are they separate?
+   - Look for optimistic depth guards (e.g., `MaxOptimisticDepthReached`, `OptimisticHeadTooDeep`)
+   - Look for Engine API connectivity guards (e.g., `ExecutionEngineDisconnected`, `ELConnectionLost`)
+   - Look for Deneb-specific EL actions (e.g., `ValidateBlobVersionedHashes`, `SendNewPayloadV3WithBlobs`)
 {% if language == "Go" %}   Hint: `beacon-chain/execution/`, `beacon-chain/blockchain/`, `notifyNewPayload`, `notifyForkchoiceUpdate`{% endif %}
 {% if language == "Rust" and client_name == "lighthouse" %}   Hint: `beacon_node/execution_layer/src/`, `notify_new_payload`, `notify_forkchoice_updated`{% endif %}
 {% if language == "Rust" and client_name == "grandine" %}   Hint: `execution_engine/`, `fork_choice_control/`{% endif %}

@@ -76,6 +76,20 @@ design divergences:
 For each, provide: `workflow_id`, `state_id`, `transition_guard`, `description` (structural
 difference + behavioral impact), `involved_clients`.
 
+#### Known Divergence Hotspots — Check These Explicitly
+
+When comparing client LSGs, pay special attention to these areas where implementations are
+known to diverge significantly:
+
+- **Blob handling (post-Deneb):** Are blob sidecars fetched/validated/published as separate states/actions, or folded into existing block processing? Check `initial_sync`, `regular_sync`, `block_generate`, and `execute_layer_relation`.
+- **Builder API branching (`block_generate`):** Where in the pipeline does the builder-vs-local decision happen? Is there a timeout fallback? Does the circuit breaker logic differ?
+- **Stall/recovery paths (`initial_sync`, `checkpoint_sync`):** Do clients model stalled sync as a distinct state with explicit recovery, or retry inline? Are there different timeout strategies?
+- **Reorg handling (`regular_sync`):** Is chain reorganization modeled as an explicit state transition with `ReorgDetected` guard, or implicit inside fork-choice update?
+- **Optimistic sync lifecycle (`execute_layer_relation`):** How deep is the modeling — is there a depth limit, an INVALID cascade path, and a post-sync validation state?
+- **Slashing protection (`attestation_generate`, `block_generate`):** Is the slashing DB check modeled as an explicit guard before signing, or treated as an implementation detail?
+- **Error/failure terminals:** Do clients converge on a `halt` state for critical errors (e.g. invalid fork-choice update), or do some model recovery paths?
+- **Lifecycle model (all validator duties):** Are workflows modeled as single-shot (terminate at `complete`) or cyclic (return to `idle`)?
+
 ### Step 4 — Compute Metrics
 
 `logic_diff_rate = B-class count / total comparison items`

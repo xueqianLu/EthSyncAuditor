@@ -311,6 +311,57 @@ class TestWriter:
         assert "b_class_minor" in data["summary"]
         assert "total_transitions" in data["summary"]
 
+    def test_normalize_severity_aliases(self):
+        """Non-standard severity values from LLM (e.g. 'High') are normalized."""
+        from file_io.writer import _normalize_severity
+
+        # Canonical values pass through
+        assert _normalize_severity({"severity": "CRITICAL"}) == "CRITICAL"
+        assert _normalize_severity({"severity": "MAJOR"}) == "MAJOR"
+        assert _normalize_severity({"severity": "MINOR"}) == "MINOR"
+
+        # Common LLM quirks
+        assert _normalize_severity({"severity": "High"}) == "MAJOR"
+        assert _normalize_severity({"severity": "high"}) == "MAJOR"
+        assert _normalize_severity({"severity": "Medium"}) == "MINOR"
+        assert _normalize_severity({"severity": "low"}) == "MINOR"
+        assert _normalize_severity({"severity": "severe"}) == "CRITICAL"
+
+        # Empty/missing falls back to heuristic
+        assert _normalize_severity({"severity": "", "state_id": "x.*"}) == "CRITICAL"
+        assert _normalize_severity({"severity": None, "description": "some diff"}) == "MAJOR"
+
+    def test_write_diff_report_severity_normalization(self):
+        """Non-standard severity values are normalized in the final report."""
+        from file_io.writer import write_diff_report_json
+
+        state = {
+            "diff_report": {
+                "a_class_diffs": [],
+                "b_class_diffs": [
+                    {
+                        "workflow_id": "block_generate",
+                        "state_id": "teku.assembling_block",
+                        "transition_guard": "TRUE",
+                        "diff_type": "B",
+                        "description": "Blob handling differs",
+                        "severity": "High",  # Non-standard from LLM
+                        "involved_clients": ["teku", "lighthouse"],
+                        "evidence": {},
+                    },
+                ],
+                "logic_diff_rate": 0.5,
+            },
+            "force_stopped": False,
+        }
+        path = write_diff_report_json(state)
+        import json
+        with open(path) as f:
+            data = json.load(f)
+        # "High" should have been normalized to "MAJOR"
+        assert data["b_class_diffs"][0]["severity"] == "MAJOR"
+        assert data["summary"]["b_class_major"] == 1
+
     def test_write_diff_report_empty_diffs(self):
         from file_io.writer import write_diff_report
 
