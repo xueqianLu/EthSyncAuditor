@@ -615,3 +615,143 @@ class TestAuditLogger:
         assert "phase2" in path.name
         assert "iter5" in path.name
         assert "sub_teku" in path.name
+
+    def test_on_chat_model_start(self):
+        """on_chat_model_start captures chat model prompts."""
+        from file_io.audit_logger import AuditLogCallback
+        from langchain_core.messages import HumanMessage
+
+        cb = AuditLogCallback(phase=2, iteration=3, agent_type="phase2_sub_prysm")
+        messages = [[HumanMessage(content="Extract the LSG for prysm")]]
+        cb.on_chat_model_start({"model": "gemini-2.5-pro"}, messages)
+
+        assert len(cb.paths) == 1
+        path = Path(cb.paths[0])
+        with open(path) as f:
+            data = json.load(f)
+        assert data["event_type"] == "llm_start"
+        assert data["phase"] == 2
+        assert data["iteration"] == 3
+        assert data["agent_type"] == "phase2_sub_prysm"
+        payload = data["payload"]
+        assert payload["model_type"] == "chat_model"
+        assert any("Extract the LSG" in p for p in payload["prompts"])
+
+    def test_on_llm_end_extracts_response_text(self):
+        """on_llm_end extracts a response_text_preview from LLMResult."""
+        from file_io.audit_logger import AuditLogCallback
+
+        # Simulate a serialized LLMResult with generations
+        fake_response = {
+            "generations": [[{
+                "text": '{"client_name": "prysm", "new_guards": []}',
+                "message": {
+                    "kwargs": {"content": "structured response content"}
+                }
+            }]],
+        }
+        cb = AuditLogCallback(phase=1, iteration=2, agent_type="phase1_sub_prysm")
+        cb.on_llm_end(fake_response)
+
+        path = Path(cb.paths[0])
+        with open(path) as f:
+            data = json.load(f)
+        assert data["event_type"] == "llm_end"
+        # Should have response_text_preview extracted
+        assert "response_text_preview" in data["payload"]
+        assert "response_text_length" in data["payload"]
+
+    def test_on_llm_error_includes_error_type(self):
+        """on_llm_error now includes error_type."""
+        from file_io.audit_logger import AuditLogCallback
+
+        cb = AuditLogCallback(phase=1, iteration=1, agent_type="test")
+        cb.on_llm_error(ValueError("bad value"))
+
+        path = Path(cb.paths[0])
+        with open(path) as f:
+            data = json.load(f)
+        assert data["payload"]["error_type"] == "ValueError"
+        assert "bad value" in data["payload"]["error"]
+
+    def test_extract_response_text_from_dict(self):
+        """_extract_response_text handles dict-serialized LLMResult."""
+        from file_io.audit_logger import _extract_response_text
+
+        result = {
+            "generations": [[{"text": "Hello, world!"}]],
+        }
+        assert _extract_response_text(result) == "Hello, world!"
+
+    def test_extract_response_text_empty_generations(self):
+        """_extract_response_text returns None for empty generations."""
+        from file_io.audit_logger import _extract_response_text
+
+        assert _extract_response_text({"generations": [[]]}) is None
+        assert _extract_response_text({"generations": []}) is None
+        assert _extract_response_text({}) is None
+
+    def test_extract_response_text_from_message_content(self):
+        """_extract_response_text falls back to message.kwargs.content."""
+        from file_io.audit_logger import _extract_response_text
+
+        result = {
+            "generations": [[{
+                "text": "",
+                "message": {"kwargs": {"content": "from message"}}
+            }]],
+        }
+        assert _extract_response_text(result) == "from message"
+
+
+class TestMakeCallbacks:
+    """Tests for graph._make_callbacks per-agent callback creation."""
+
+    def test_make_callbacks_returns_none_in_mock_mode(self):
+        from graph import configure_graph, _make_callbacks
+
+        configure_graph(mock=True)
+        result = _make_callbacks(phase=1, iteration=1, agent_type="test")
+        assert result is None
+
+    def test_make_callbacks_creates_per_agent_callback(self):
+        from file_io.audit_logger import AuditLogCallback
+        from graph import configure_graph, _make_callbacks
+
+        configure_graph(mock=False, llm=None, callbacks=[])
+        cbs = _make_callbacks(phase=2, iteration=3, agent_type="phase2_sub_lighthouse")
+        assert cbs is not None
+        assert len(cbs) == 1
+        assert isinstance(cbs[0], AuditLogCallback)
+        assert cbs[0].phase == 2
+        assert cbs[0].iteration == 3
+        assert cbs[0].agent_type == "phase2_sub_lighthouse"
+
+    def test_make_callbacks_strips_stale_audit_callbacks(self):
+        """Pre-existing AuditLogCallback instances are replaced, not duplicated."""
+        from file_io.audit_logger import AuditLogCallback
+        from graph import configure_graph, _make_callbacks
+
+        stale_cb = AuditLogCallback(phase=0, iteration=0, agent_type="preprocess")
+        configure_graph(mock=False, llm=None, callbacks=[stale_cb])
+        cbs = _make_callbacks(phase=1, iteration=5, agent_type="phase1_main")
+        audit_cbs = [cb for cb in cbs if isinstance(cb, AuditLogCallback)]
+        assert len(audit_cbs) == 1
+        assert audit_cbs[0].phase == 1
+        assert audit_cbs[0].iteration == 5
+        assert audit_cbs[0].agent_type == "phase1_main"
+
+    def test_make_callbacks_preserves_non_audit_callbacks(self):
+        """User-supplied non-audit callbacks are preserved."""
+        from langchain_core.callbacks import BaseCallbackHandler
+        from graph import configure_graph, _make_callbacks
+
+        class CustomCallback(BaseCallbackHandler):
+            pass
+
+        custom = CustomCallback()
+        configure_graph(mock=False, llm=None, callbacks=[custom])
+        cbs = _make_callbacks(phase=1, iteration=1, agent_type="test")
+        assert custom in cbs
+        assert len(cbs) == 2  # custom + new AuditLogCallback
+

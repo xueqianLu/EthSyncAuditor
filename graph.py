@@ -161,8 +161,36 @@ def _get_llm() -> Any:
 
 
 def _get_callbacks() -> list[Any] | None:
-    """Return the configured callback handlers, or ``None``."""
+    """Return the configured callback handlers, or ``None``.
+
+    .. deprecated::
+        Prefer :func:`_make_callbacks` which creates per-agent audit
+        callbacks with the correct phase / iteration / agent_type metadata.
+    """
     return _graph_config.get("callbacks") or None
+
+
+def _make_callbacks(phase: int, iteration: int, agent_type: str) -> list[Any] | None:
+    """Create callbacks for a specific agent invocation.
+
+    Returns a list that includes:
+    * All user-supplied callbacks from :func:`configure_graph` **except**
+      ``AuditLogCallback`` instances (which would carry stale metadata).
+    * A fresh :class:`AuditLogCallback` with the correct *phase*,
+      *iteration* and *agent_type* — so log files are properly attributed.
+
+    Returns ``None`` in mock mode (no callbacks needed).
+    """
+    if _graph_config["mock"]:
+        return None
+
+    from file_io.audit_logger import AuditLogCallback
+
+    base = list(_graph_config.get("callbacks") or [])
+    # Strip any pre-existing AuditLogCallback (e.g. the legacy global one)
+    base = [cb for cb in base if not isinstance(cb, AuditLogCallback)]
+    base.append(AuditLogCallback(phase=phase, iteration=iteration, agent_type=agent_type))
+    return base or None
 
 
 def phase1_sub_agent_node(state: GlobalState) -> dict[str, Any]:
@@ -181,7 +209,8 @@ def phase1_sub_agent_node(state: GlobalState) -> dict[str, Any]:
         iteration,
     )
 
-    agent_fn = build_phase1_sub_agent(client_name, llm=_get_llm(), callbacks=_get_callbacks())
+    cbs = _make_callbacks(phase=1, iteration=iteration, agent_type=f"phase1_sub_{client_name}")
+    agent_fn = build_phase1_sub_agent(client_name, llm=_get_llm(), callbacks=cbs)
     return agent_fn(state)
 
 
@@ -203,7 +232,8 @@ def phase1_main_agent_node(state: GlobalState) -> dict[str, Any]:
         len(reports),
     )
 
-    agent_fn = build_phase1_main_agent(llm=_get_llm(), callbacks=_get_callbacks())
+    cbs = _make_callbacks(phase=1, iteration=iteration, agent_type="phase1_main")
+    agent_fn = build_phase1_main_agent(llm=_get_llm(), callbacks=cbs)
     result = agent_fn(state)
 
     # Per-iteration checkpoint
@@ -236,7 +266,8 @@ def phase2_sub_agent_node(state: GlobalState) -> dict[str, Any]:
         iteration,
     )
 
-    agent_fn = build_phase2_sub_agent(client_name, llm=_get_llm(), callbacks=_get_callbacks())
+    cbs = _make_callbacks(phase=2, iteration=iteration, agent_type=f"phase2_sub_{client_name}")
+    agent_fn = build_phase2_sub_agent(client_name, llm=_get_llm(), callbacks=cbs)
     result = agent_fn(state)
 
     # Write intermediate LSG YAML for this client+iteration
@@ -270,7 +301,9 @@ def phase2_main_agent_node(state: GlobalState) -> dict[str, Any]:
         len(client_lsgs),
     )
 
-    agent_fn = build_phase2_main_agent(llm=_get_llm(), callbacks=_get_callbacks())
+    agent_fn = build_phase2_main_agent(llm=_get_llm(), callbacks=_make_callbacks(
+        phase=2, iteration=iteration, agent_type="phase2_main",
+    ))
     result = agent_fn(state)
 
     # ── Record iteration metrics for trend tracking ─────────────────────

@@ -225,11 +225,15 @@ def main() -> None:
     OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
 
     # ── Audit logger (attached to LLM calls) ──────────────────────────
+    # The preprocessor's embedding calls get a "phase0/global" callback.
+    # Phase 1/2 agent nodes create their own per-agent callbacks via
+    # ``_make_callbacks()`` in graph.py — with the correct phase,
+    # iteration, and agent_type metadata.
     callbacks: list[Any] = []
     if not args.mock:
         from file_io.audit_logger import AuditLogCallback
 
-        audit_cb = AuditLogCallback(phase=0, iteration=0, agent_type="global")
+        audit_cb = AuditLogCallback(phase=0, iteration=0, agent_type="preprocess")
         callbacks.append(audit_cb)
 
     # ── LLM initialization ────────────────────────────────────────────
