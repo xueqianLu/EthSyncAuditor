@@ -63,14 +63,67 @@ LANGUAGE_GRAMMARS: dict[str, tuple[str, str]] = {
 }
 
 # ── Entry‑point keyword heuristics (case‑insensitive) ──────────────────
+# These are matched against function_name.lower().replace("_", "").
+# IMPORTANT: keep keywords specific enough to avoid false positives
+# (e.g. "aggregate" alone matches BLS aggregate functions).
 ENTRY_POINT_KEYWORDS: dict[str, list[str]] = {
-    "initial_sync":            ["initialsync", "runinitial", "startinitial"],
-    "regular_sync":            ["regularsync", "runregular", "gossipsync"],
-    "checkpoint_sync":         ["checkpointsync", "runcheckpoint"],
-    "block_generate":          ["proposeblock", "buildblock", "produceblock"],
-    "attestation_generate":    ["submitattestation", "createattestation"],
-    "aggregate":               ["aggregate", "computeaggregate"],
-    "execute_layer_relation":  ["engineapi", "executionengine", "forkchoiceupdate"],
+    "initial_sync": [
+        "initialsync", "runinitial", "startinitial",
+        # Lighthouse/Lodestar use "range sync" terminology
+        "rangesync", "syncingchain", "syncchain",
+        # Teku uses ForwardSync / SyncManager / PeerSync
+        "forwardsync", "peersync", "syncmanager",
+        # Grandine
+        "syncblockbyrange",
+    ],
+    "regular_sync": [
+        "regularsync", "runregular", "gossipsync",
+        # Gossip block/attestation handlers
+        "receiveblock", "receiveattestation", "processblock",
+        "gossiphandler", "blockimporter", "gossipvalidator",
+        # Reorg handling (newly emphasized)
+        "handlereorg", "onreorg",
+    ],
+    "checkpoint_sync": [
+        "checkpointsync", "runcheckpoint",
+        # Backfill (Lighthouse/Lodestar)
+        "backfillsync", "backfillbatch",
+        # Weak subjectivity
+        "weaksubjectivity",
+    ],
+    "block_generate": [
+        "proposeblock", "buildblock", "produceblock",
+        # Builder API / MEV-boost (newly emphasized)
+        "builderapi", "builderbid", "mevboost",
+        # Payload retrieval (specific Engine/Builder API calls)
+        "enginegetpayload", "buildergetpayload",
+        # Block production duty
+        "blockproductionduty", "blockservice",
+    ],
+    "attestation_generate": [
+        "submitattestation", "createattestation",
+        # Service-level entry points
+        "attestationservice", "attestationduty", "attestationproduction",
+        "performattestationduty",
+        # Slashing protection (newly emphasized)
+        "slashingprotection", "issafetoattest",
+    ],
+    "aggregate": [
+        # Specific: aggregation workflow, NOT BLS aggregate primitives
+        "aggregateandproof", "submitaggregate",
+        "aggregationduty", "aggregatorselection",
+        "produceaggregate", "publishaggregate",
+        "computeaggregate",
+    ],
+    "execute_layer_relation": [
+        "engineapi", "executionengine", "forkchoiceupdate",
+        # Specific Engine API calls (newly emphasized)
+        "newpayload", "notifynewpayload", "payloadstatus",
+        # Optimistic sync
+        "optimisticsync", "optimisticimport",
+        # Invalid payload handling
+        "invalidpayload", "invalidateblock",
+    ],
 }
 
 # ── User overrides for entry points (client → workflow → list[fn]) ─────
@@ -86,7 +139,7 @@ EMBEDDING_MODELS: list[str] = [
 # ── LLM provider & model names ──────────────────────────────────────────
 LLM_PROVIDER: str = "anthropic"  # "anthropic" or "gemini"
 LLM_MODEL: str = "claude-opus-4-20250514"
-GEMINI_MODEL: str = "gemini-2.5-flash"
+GEMINI_MODEL: str = "gemini-2.5-pro"
 # GEMINI_MODEL: str = "gemini-3.1-pro-preview"
 
 # ── API proxy / custom base URLs ────────────────────────────────────────

@@ -182,6 +182,26 @@ def _merge_vocab(existing: list, new: list) -> list:
     return result
 
 
+def _collect_then_clear(existing: list | None, new: list | None) -> list:
+    """Fan-out / fan-in reducer.
+
+    * ``new`` is a non-empty list → **append** to *existing*.
+    * ``new`` is ``[]`` (empty list) → **clear** and return ``[]``.
+    * ``new`` is ``None`` → keep *existing* unchanged.
+
+    This enables the pattern where parallel sub-agents accumulate results
+    into a shared list, and the main agent sends ``[]`` to reset it before
+    the next iteration.
+    """
+    if new is None:
+        return existing if existing is not None else []
+    if existing is None:
+        existing = []
+    if len(new) == 0:
+        return []
+    return existing + new
+
+
 def _merge_dicts(existing: dict, new: dict) -> dict:
     """Shallow‑merge dict reducer (e.g. client LSG maps)."""
     if existing is None:

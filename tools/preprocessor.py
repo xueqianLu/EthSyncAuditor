@@ -295,6 +295,18 @@ def _build_callgraph(client_name: str, symbols: list[SymbolInfo]) -> CallGraph:
     overrides = ENTRY_POINT_OVERRIDES.get(client_name, {})
     entry_points: dict[str, list[str]] = {}
 
+    # Prefixes/substrings that indicate test/bench/mock functions — not real entry points
+    _SKIP_PREFIXES = ("test", "fuzz", "mock", "bench", "fake", "stub", "dummy")
+    # File path patterns that indicate test files
+    _TEST_PATH_MARKERS = ("/test", "/tests", "/testing", "_test.", "_test_", "test_", "/spec/")
+
+    def _is_test_symbol(sym: SymbolInfo) -> bool:
+        fn_lower = sym.function_name.lower().replace("_", "")
+        if any(fn_lower.startswith(p) for p in _SKIP_PREFIXES):
+            return True
+        file_lower = sym.file.lower()
+        return any(marker in file_lower for marker in _TEST_PATH_MARKERS)
+
     for wf_id in WORKFLOW_IDS:
         if wf_id in overrides:
             entry_points[wf_id] = overrides[wf_id]
@@ -303,6 +315,8 @@ def _build_callgraph(client_name: str, symbols: list[SymbolInfo]) -> CallGraph:
         keywords = ENTRY_POINT_KEYWORDS.get(wf_id, [])
         matched: list[str] = []
         for sym in symbols:
+            if _is_test_symbol(sym):
+                continue
             fn_lower = sym.function_name.lower().replace("_", "")
             if any(kw in fn_lower for kw in keywords):
                 matched.append(sym.qualified_name)
