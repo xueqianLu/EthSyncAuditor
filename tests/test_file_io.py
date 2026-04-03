@@ -124,6 +124,66 @@ class TestWriter:
         paths = write_all_final_lsgs(state)
         assert len(paths) == 5
 
+    def test_write_all_final_lsgs_backfills_vocab(self):
+        """Empty guards/actions are backfilled from global vocabulary."""
+        from file_io.writer import write_all_final_lsgs
+
+        # Build a client LSG with empty guards/actions but referenced names
+        client_lsgs = {}
+        for name in _config.CLIENT_NAMES:
+            client_lsgs[name] = {
+                "version": 1,
+                "client": name,
+                "guards": [],  # empty — LLM didn't return them
+                "actions": [],
+                "workflows": [{
+                    "id": "initial_sync",
+                    "name": "Initial Sync",
+                    "states": [{
+                        "id": "initial_sync.init",
+                        "label": "Init",
+                        "category": "init",
+                        "transitions": [{
+                            "guard": "PeerAvailable",
+                            "actions": ["StartSync", "LogEvent"],
+                            "next_state": "initial_sync.syncing",
+                        }],
+                    }],
+                }],
+            }
+
+        # Global vocab from Phase 1
+        global_guards = [
+            {"name": "PeerAvailable", "category": "net", "description": "Peer is up"},
+            {"name": "UnusedGuard", "category": "net", "description": "Not used"},
+        ]
+        global_actions = [
+            {"name": "StartSync", "category": "sync", "description": "Start syncing"},
+            {"name": "LogEvent", "category": "misc", "description": "Log something"},
+            {"name": "UnusedAction", "category": "misc", "description": "Not used"},
+        ]
+
+        state = {
+            "client_lsgs": client_lsgs,
+            "guards": global_guards,
+            "actions": global_actions,
+        }
+        paths = write_all_final_lsgs(state)
+        assert len(paths) == 5
+
+        # Verify the backfilled data via re-reading the YAML
+        with open(paths[0]) as f:
+            data = yaml.safe_load(f)
+        # Should have exactly 1 guard (PeerAvailable) and 2 actions (StartSync, LogEvent)
+        # NOT the unused ones
+        guard_names = [g["name"] for g in data.get("guards", [])]
+        action_names = [a["name"] for a in data.get("actions", [])]
+        assert "PeerAvailable" in guard_names
+        assert "UnusedGuard" not in guard_names
+        assert "StartSync" in action_names
+        assert "LogEvent" in action_names
+        assert "UnusedAction" not in action_names
+
     def test_write_diff_report(self):
         from file_io.writer import write_diff_report
 

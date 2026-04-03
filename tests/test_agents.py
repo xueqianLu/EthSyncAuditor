@@ -135,6 +135,56 @@ class TestPhase2SubAgent:
         wf_ids = {wf["id"] for wf in lsg["workflows"]}
         assert wf_ids == set(_config.WORKFLOW_IDS)
 
+    def test_backfill_vocab_filters_to_referenced(self):
+        """_backfill_vocab populates guards/actions from global vocab, filtered."""
+        from agents.phase2_sub_agent import _backfill_vocab
+
+        lsg_dict = {
+            "client": "prysm",
+            "guards": [],
+            "actions": [],
+            "workflows": [{
+                "id": "initial_sync",
+                "states": [{
+                    "id": "initial_sync.init",
+                    "label": "Init",
+                    "category": "init",
+                    "transitions": [{
+                        "guard": "PeerAvailable",
+                        "actions": ["StartSync"],
+                        "next_state": "initial_sync.done",
+                    }],
+                }],
+            }],
+        }
+        global_guards = [
+            {"name": "PeerAvailable", "category": "net", "description": "x"},
+            {"name": "UnusedGuard", "category": "net", "description": "y"},
+        ]
+        global_actions = [
+            {"name": "StartSync", "category": "sync", "description": "x"},
+            {"name": "UnusedAction", "category": "misc", "description": "y"},
+        ]
+        _backfill_vocab(lsg_dict, global_guards, global_actions)
+        assert len(lsg_dict["guards"]) == 1
+        assert lsg_dict["guards"][0]["name"] == "PeerAvailable"
+        assert len(lsg_dict["actions"]) == 1
+        assert lsg_dict["actions"][0]["name"] == "StartSync"
+
+    def test_backfill_vocab_noop_if_already_populated(self):
+        """_backfill_vocab does nothing if guards/actions are already populated."""
+        from agents.phase2_sub_agent import _backfill_vocab
+
+        lsg_dict = {
+            "guards": [{"name": "G1"}],
+            "actions": [{"name": "A1"}],
+            "workflows": [],
+        }
+        _backfill_vocab(lsg_dict, [{"name": "X"}], [{"name": "Y"}])
+        # Should keep the original
+        assert len(lsg_dict["guards"]) == 1
+        assert lsg_dict["guards"][0]["name"] == "G1"
+
 
 # ── Phase 2 Main Agent ────────────────────────────────────────────────
 

@@ -61,15 +61,64 @@ def write_client_lsg(client_name: str, lsg: dict[str, Any], final: bool = False)
     return path
 
 
+def _collect_referenced_names(workflows: list[dict]) -> tuple[set[str], set[str]]:
+    """Return (guard_names, action_names) referenced in *workflows*."""
+    guard_names: set[str] = set()
+    action_names: set[str] = set()
+    for wf in workflows:
+        for st in wf.get("states", []):
+            for tr in st.get("transitions", []):
+                g = tr.get("guard", "")
+                if g and g != "TRUE":
+                    guard_names.add(g)
+                for a in tr.get("actions", []):
+                    if a:
+                        action_names.add(a)
+    return guard_names, action_names
+
+
 def write_all_final_lsgs(state: dict[str, Any]) -> list[Path]:
-    """Write final LSG YAML for all clients."""
+    """Write final LSG YAML for all clients.
+
+    If a client LSG has empty ``guards``/``actions`` (common when the LLM
+    focuses on workflows and skips vocab fields), backfill from the global
+    vocabulary filtered to names actually referenced in that client's
+    workflow transitions.
+    """
     paths: list[Path] = []
     client_lsgs = state.get("client_lsgs", {})
+    global_guards = state.get("guards", [])
+    global_actions = state.get("actions", [])
+
     for client_name in CLIENT_NAMES:
         lsg = client_lsgs.get(client_name)
-        if lsg is not None:
-            path = write_client_lsg(client_name, lsg, final=True)
-            paths.append(path)
+        if lsg is None:
+            continue
+
+        # ── Backfill empty guards/actions from global vocabulary ─────
+        if not lsg.get("guards") or not lsg.get("actions"):
+            ref_guards, ref_actions = _collect_referenced_names(
+                lsg.get("workflows", []),
+            )
+            if not lsg.get("guards") and global_guards:
+                lsg["guards"] = [
+                    g for g in global_guards if g.get("name") in ref_guards
+                ]
+                logger.info(
+                    "[write_all_final_lsgs] backfilled %d guards for %s",
+                    len(lsg["guards"]), client_name,
+                )
+            if not lsg.get("actions") and global_actions:
+                lsg["actions"] = [
+                    a for a in global_actions if a.get("name") in ref_actions
+                ]
+                logger.info(
+                    "[write_all_final_lsgs] backfilled %d actions for %s",
+                    len(lsg["actions"]), client_name,
+                )
+
+        path = write_client_lsg(client_name, lsg, final=True)
+        paths.append(path)
     return paths
 
 

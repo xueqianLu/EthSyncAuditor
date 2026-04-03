@@ -26,6 +26,64 @@ def _load_prompt_template() -> Template:
     return Template(_PROMPT_PATH.read_text(encoding="utf-8"))
 
 
+def _collect_referenced_names(workflows: list[dict]) -> tuple[set[str], set[str]]:
+    """Scan workflows and return (guard_names, action_names) actually referenced."""
+    guard_names: set[str] = set()
+    action_names: set[str] = set()
+    for wf in workflows:
+        for st in wf.get("states", []):
+            for tr in st.get("transitions", []):
+                g = tr.get("guard", "")
+                if g and g != "TRUE":
+                    guard_names.add(g)
+                for a in tr.get("actions", []):
+                    if a:
+                        action_names.add(a)
+    return guard_names, action_names
+
+
+def _backfill_vocab(
+    lsg_dict: dict,
+    global_guards: list[dict],
+    global_actions: list[dict],
+) -> None:
+    """Populate ``guards``/``actions`` in *lsg_dict* from the global vocabulary.
+
+    If the LLM already returned non-empty guards/actions, keep them.
+    Otherwise, filter the global vocabulary down to only those names that
+    appear in the client's workflow transitions — producing a meaningful
+    per-client vocabulary rather than duplicating the entire global set.
+    """
+    if lsg_dict.get("guards") and lsg_dict.get("actions"):
+        return  # LLM already populated them
+
+    ref_guards, ref_actions = _collect_referenced_names(
+        lsg_dict.get("workflows", []),
+    )
+
+    if not lsg_dict.get("guards") and global_guards:
+        lsg_dict["guards"] = [
+            g for g in global_guards
+            if g.get("name") in ref_guards
+        ]
+        logger.debug(
+            "Backfilled %d/%d guards for %s",
+            len(lsg_dict["guards"]), len(ref_guards),
+            lsg_dict.get("client", "?"),
+        )
+
+    if not lsg_dict.get("actions") and global_actions:
+        lsg_dict["actions"] = [
+            a for a in global_actions
+            if a.get("name") in ref_actions
+        ]
+        logger.debug(
+            "Backfilled %d/%d actions for %s",
+            len(lsg_dict["actions"]), len(ref_actions),
+            lsg_dict.get("client", "?"),
+        )
+
+
 def build_phase2_sub_agent(client_name: str, llm=None, callbacks=None):
     """Build a Phase 2 Sub-Agent for *client_name*.
 
@@ -89,7 +147,11 @@ def build_phase2_sub_agent(client_name: str, llm=None, callbacks=None):
                     chain, _prompt, label=f"phase2_sub/{client_name}",
                     callbacks=callbacks,
                 )
-                return {"client_lsgs": {client_name: lsg.model_dump()}}
+                lsg_dict = lsg.model_dump()
+                # LLM often returns empty guards/actions — backfill from
+                # global vocabulary filtered to names referenced in workflows.
+                _backfill_vocab(lsg_dict, guards, actions)
+                return {"client_lsgs": {client_name: lsg_dict}}
             except Exception:
                 logger.error("LLM call failed for %s", client_name, exc_info=True)
 
