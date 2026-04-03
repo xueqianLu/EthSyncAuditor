@@ -132,6 +132,16 @@ def test_full_comparison():
         assert len(d.get("involved_clients", [])) >= 2, \
             f"Expected both clients in involved_clients, got: {d.get('involved_clients')}"
 
+    # B-class diffs should have deviating_clients populated
+    for d in dr["b_class_diffs"]:
+        assert "deviating_clients" in d, f"Missing deviating_clients: {d}"
+        assert len(d["deviating_clients"]) >= 1, \
+            f"Expected at least one deviating client, got: {d['deviating_clients']}"
+        # deviating clients should be subset of involved clients
+        for dc in d["deviating_clients"]:
+            assert dc in d["involved_clients"], \
+                f"Deviating client {dc} not in involved_clients {d['involved_clients']}"
+
     # total_transitions should be present and positive
     assert dr["total_transitions"] > 0
 

@@ -378,6 +378,128 @@ class TestWriter:
         assert "No vocabulary misalignment detected" in content
         assert "No structural logic differences found" in content
 
+    def test_per_workflow_summary_uses_lsg_counts(self):
+        """Per-workflow similarity uses actual transition counts from client_lsgs."""
+        from file_io.writer import _per_workflow_summary
+
+        # 2 B-class diffs in initial_sync, 1 in regular_sync
+        b_diffs = [
+            {"workflow_id": "initial_sync"},
+            {"workflow_id": "initial_sync"},
+            {"workflow_id": "regular_sync"},
+        ]
+        # initial_sync has 10 transitions (max across clients), regular_sync has 5
+        client_lsgs = {
+            "prysm": {
+                "workflows": [
+                    {"id": "initial_sync", "states": [{"transitions": [{}] * 10}]},
+                    {"id": "regular_sync", "states": [{"transitions": [{}] * 5}]},
+                ]
+            },
+            "lighthouse": {
+                "workflows": [
+                    {"id": "initial_sync", "states": [{"transitions": [{}] * 8}]},
+                    {"id": "regular_sync", "states": [{"transitions": [{}] * 5}]},
+                ]
+            },
+        }
+        rows = _per_workflow_summary([], b_diffs, total_transitions=15, client_lsgs=client_lsgs)
+        by_wf = {r["workflow_id"]: r for r in rows}
+        # initial_sync: 2 B-class out of 10 → similarity = 0.8
+        assert abs(by_wf["initial_sync"]["similarity"] - 0.8) < 0.01
+        # regular_sync: 1 B-class out of 5 → similarity = 0.8
+        assert abs(by_wf["regular_sync"]["similarity"] - 0.8) < 0.01
+
+    def test_per_workflow_summary_without_lsg_falls_back(self):
+        """Without client_lsgs, similarity falls back to even split."""
+        from file_io.writer import _per_workflow_summary
+
+        b_diffs = [
+            {"workflow_id": "initial_sync"},
+        ]
+        rows = _per_workflow_summary([], b_diffs, total_transitions=70, client_lsgs=None)
+        by_wf = {r["workflow_id"]: r for r in rows}
+        # Even split: 70 / 7 = 10 per workflow; 1 B-class → similarity = 0.9
+        assert abs(by_wf["initial_sync"]["similarity"] - 0.9) < 0.01
+
+    def test_per_client_ranking_deviating_clients(self):
+        """Ranking uses deviating_clients to differentiate ref from deviator."""
+        from file_io.writer import _per_client_ranking
+
+        b_diffs = [
+            {
+                "involved_clients": ["lighthouse", "prysm"],
+                "deviating_clients": ["lighthouse"],
+            },
+            {
+                "involved_clients": ["lighthouse", "prysm"],
+                "deviating_clients": ["lighthouse"],
+            },
+            {
+                "involved_clients": ["prysm", "teku"],
+                "deviating_clients": ["teku"],
+            },
+        ]
+        rows = _per_client_ranking([], b_diffs)
+        by_client = {r["client"]: r for r in rows}
+        # lighthouse: involved in 2, deviating in 2
+        assert by_client["lighthouse"]["b_class"] == 2
+        assert by_client["lighthouse"]["b_class_deviating"] == 2
+        # prysm: involved in 3 (as ref), deviating in 0
+        assert by_client["prysm"]["b_class"] == 3
+        assert by_client["prysm"]["b_class_deviating"] == 0
+        # teku: involved in 1, deviating in 1
+        assert by_client["teku"]["b_class"] == 1
+        assert by_client["teku"]["b_class_deviating"] == 1
+        # Sorted by b_class_deviating: lighthouse (2) > teku (1) > prysm (0)
+        assert rows[0]["client"] == "lighthouse"
+
+    def test_per_client_ranking_no_deviating_falls_back(self):
+        """Without deviating_clients, all involved_clients are counted as deviating."""
+        from file_io.writer import _per_client_ranking
+
+        b_diffs = [
+            {"involved_clients": ["prysm", "lighthouse"]},  # no deviating_clients
+        ]
+        rows = _per_client_ranking([], b_diffs)
+        by_client = {r["client"]: r for r in rows}
+        # Both counted as deviating (fallback)
+        assert by_client["prysm"]["b_class_deviating"] == 1
+        assert by_client["lighthouse"]["b_class_deviating"] == 1
+
+    def test_deduplication_preserves_deviating_clients(self):
+        """Deduplication merges deviating_clients from symmetric diffs."""
+        from file_io.writer import _deduplicate_b_diffs
+
+        diffs = [
+            {
+                "workflow_id": "initial_sync",
+                "state_id": "initial_sync.check",
+                "transition_guard": "G1",
+                "diff_type": "B",
+                "description": "present in prysm but no equivalent in lighthouse",
+                "severity": "MINOR",
+                "involved_clients": ["lighthouse", "prysm"],
+                "deviating_clients": ["lighthouse"],
+                "evidence": {},
+            },
+            {
+                "workflow_id": "initial_sync",
+                "state_id": "initial_sync.check",
+                "transition_guard": "G1",
+                "diff_type": "B",
+                "description": "present in lighthouse but no equivalent in teku",
+                "severity": "MINOR",
+                "involved_clients": ["lighthouse", "teku"],
+                "deviating_clients": ["teku"],
+                "evidence": {},
+            },
+        ]
+        result = _deduplicate_b_diffs(diffs)
+        assert len(result) == 1
+        assert sorted(result[0]["deviating_clients"]) == ["lighthouse", "teku"]
+        assert sorted(result[0]["involved_clients"]) == ["lighthouse", "prysm", "teku"]
+
 
 # ── Audit Logger ────────────────────────────────────────────────────────
 

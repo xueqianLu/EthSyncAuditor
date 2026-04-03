@@ -359,6 +359,7 @@ def _deterministic_compare(
                             f"{other_client}."
                         ),
                         "involved_clients": sorted([ref_client, other_client]),
+                        "deviating_clients": [other_client],
                         "evidence": {},
                     }
                     diff_entry["severity"] = _classify_severity(diff_entry)
@@ -381,6 +382,7 @@ def _deterministic_compare(
                             f"{ref_client}."
                         ),
                         "involved_clients": sorted([ref_client, other_client]),
+                        "deviating_clients": [other_client],
                         "evidence": {},
                     }
                     diff_entry["severity"] = _classify_severity(diff_entry)
@@ -401,6 +403,7 @@ def _deterministic_compare(
                             f"but is missing in {c}."
                         ),
                         "involved_clients": sorted(list(clients_here) + [c]),
+                        "deviating_clients": [c],
                         "evidence": {},
                     }
                     diff_entry["severity"] = _classify_severity(diff_entry)
@@ -427,6 +430,7 @@ def _deterministic_compare(
                     f"in {', '.join(sorted(missing))}."
                 ),
                 "involved_clients": sorted(missing | clients_with_wf),
+                "deviating_clients": sorted(missing),
                 "evidence": {},
             }
             diff_entry["severity"] = _classify_severity(diff_entry)

@@ -78,15 +78,46 @@ def write_all_final_lsgs(state: dict[str, Any]) -> list[Path]:
 # ────────────────────────────────────────────────────────────────────────
 
 
+def _count_transitions_per_workflow(
+    client_lsgs: dict[str, dict],
+) -> dict[str, int]:
+    """Count total unique transitions per workflow across all client LSGs.
+
+    Returns the **maximum** transition count among all clients for each
+    workflow.  This represents the "reference size" of that workflow — i.e.
+    how many comparison items the most-detailed client contributes.
+    """
+    wf_counts: dict[str, Counter] = defaultdict(Counter)
+    for _client, lsg in client_lsgs.items():
+        for wf in lsg.get("workflows", []):
+            wf_id = wf.get("id", "?")
+            n_transitions = sum(
+                len(st.get("transitions", []))
+                for st in wf.get("states", [])
+            )
+            wf_counts[wf_id][_client] = n_transitions
+    # Use max across clients as the reference size for each workflow
+    result: dict[str, int] = {}
+    for wf_id, per_client in wf_counts.items():
+        result[wf_id] = max(per_client.values()) if per_client else 0
+    return result
+
+
 def _per_workflow_summary(
     a_diffs: list[dict], b_diffs: list[dict],
     total_transitions: int = 0,
+    client_lsgs: dict[str, dict] | None = None,
 ) -> list[dict]:
     """Return per-workflow summary sorted by total diff count (descending).
 
     ``similarity`` reflects structural agreement: the proportion of
     comparison items that are NOT B-class diffs.  A-class diffs (vocabulary
     misalignment) do not reduce similarity because they are auto-resolved.
+
+    When *client_lsgs* is provided, per-workflow transition counts are
+    computed directly from LSG data — this gives an accurate per-workflow
+    denominator instead of distributing the aggregate ``total_transitions``
+    proportionally (which was circular and yielded ~uniform similarity).
     """
     wf_a: Counter = Counter()
     wf_b: Counter = Counter()
@@ -96,29 +127,29 @@ def _per_workflow_summary(
         wf_b[d.get("workflow_id", "?")] += 1
 
     all_wfs = sorted(set(wf_a.keys()) | set(wf_b.keys()) | set(WORKFLOW_IDS))
-    total_b = sum(wf_b.values())
 
-    # Distribute total_transitions proportionally across workflows for
-    # similarity computation.  If not available, fall back to using total_b
-    # as denominator (similarity is then 0% for any workflow with B-class diffs).
+    # Compute per-workflow transition counts from LSG data when available
+    wf_transition_counts: dict[str, int] = {}
+    if client_lsgs:
+        wf_transition_counts = _count_transitions_per_workflow(client_lsgs)
+
     rows: list[dict] = []
     for wf in all_wfs:
         a = wf_a.get(wf, 0)
         b = wf_b.get(wf, 0)
         total = a + b
-        # Estimate per-workflow share of total_transitions proportionally
-        if total_transitions > 0 and total_b > 0:
-            # Allocate transitions proportionally to B-class count per workflow
-            wf_transitions = max(
-                int(total_transitions * (b / total_b)) if b > 0 else total_transitions // len(all_wfs),
-                b,  # floor: at least as many as B-class diffs
-            )
-        elif total_transitions > 0:
-            wf_transitions = total_transitions // max(len(all_wfs), 1)
-        else:
-            wf_transitions = max(a + b, 1)
-        similarity = 1.0 - b / max(wf_transitions, 1)
-        similarity = max(similarity, 0.0)
+        # Use actual per-workflow transition count when available;
+        # fall back to even split of total_transitions or diff count.
+        wf_transitions = wf_transition_counts.get(wf, 0)
+        if wf_transitions <= 0:
+            # Fallback: even split or diff count
+            if total_transitions > 0:
+                wf_transitions = total_transitions // max(len(all_wfs), 1)
+            else:
+                wf_transitions = max(total, 1)
+        # Floor: denominator must be at least as large as B-class count
+        wf_transitions = max(wf_transitions, b, 1)
+        similarity = max(1.0 - b / wf_transitions, 0.0)
         rows.append({
             "workflow_id": wf,
             "a_class": a,
@@ -133,23 +164,50 @@ def _per_workflow_summary(
 def _per_client_ranking(
     a_diffs: list[dict], b_diffs: list[dict],
 ) -> list[dict]:
-    """Return per-client deviation ranking (most involved first)."""
+    """Return per-client deviation ranking (most deviant first).
+
+    For B-class diffs, distinguishes between the *deviating* client(s) —
+    those whose implementation diverges from the majority — and the
+    reference/majority clients.  The ``b_class_deviating`` column counts
+    how many B-class diffs a client is *responsible for*, whereas
+    ``b_class`` counts total involvement (including as reference).
+
+    The ranking is sorted by ``b_class_deviating`` (descending), then by
+    ``total`` as tiebreaker.
+    """
     client_a: Counter = Counter()
-    client_b: Counter = Counter()
+    client_b: Counter = Counter()       # total involvement
+    client_b_dev: Counter = Counter()   # deviating involvement only
     for d in a_diffs:
         for c in d.get("involved_clients", []):
             client_a[c] += 1
     for d in b_diffs:
+        deviating = d.get("deviating_clients", [])
         for c in d.get("involved_clients", []):
             client_b[c] += 1
+        # If deviating_clients was populated, use it; otherwise fall back
+        # to counting all involved (legacy / LLM-generated diffs).
+        if deviating:
+            for c in deviating:
+                client_b_dev[c] += 1
+        else:
+            for c in d.get("involved_clients", []):
+                client_b_dev[c] += 1
 
     all_clients = sorted(set(client_a.keys()) | set(client_b.keys()) | set(CLIENT_NAMES))
     rows: list[dict] = []
     for c in all_clients:
         a = client_a.get(c, 0)
         b = client_b.get(c, 0)
-        rows.append({"client": c, "a_class": a, "b_class": b, "total": a + b})
-    rows.sort(key=lambda r: r["total"], reverse=True)
+        b_dev = client_b_dev.get(c, 0)
+        rows.append({
+            "client": c,
+            "a_class": a,
+            "b_class": b,
+            "b_class_deviating": b_dev,
+            "total": a + b,
+        })
+    rows.sort(key=lambda r: (r["b_class_deviating"], r["total"]), reverse=True)
     return rows
 
 
@@ -240,8 +298,9 @@ def _deduplicate_b_diffs(b_diffs: list[dict]) -> list[dict]:
             deduped.append(entries[0])
             continue
 
-        # Merge: union involved_clients, pick highest severity, join descriptions
+        # Merge: union involved_clients, union deviating_clients, pick highest severity, join descriptions
         merged_clients: set[str] = set()
+        merged_deviating: set[str] = set()
         descriptions: list[str] = []
         best_severity = "MINOR"
         evidence: dict = {}
@@ -251,6 +310,8 @@ def _deduplicate_b_diffs(b_diffs: list[dict]) -> list[dict]:
         for e in entries:
             for c in e.get("involved_clients", []):
                 merged_clients.add(c)
+            for c in e.get("deviating_clients", []):
+                merged_deviating.add(c)
             desc = e.get("description", "")
             if desc and desc not in seen_descs:
                 descriptions.append(desc)
@@ -269,6 +330,7 @@ def _deduplicate_b_diffs(b_diffs: list[dict]) -> list[dict]:
             "description": " | ".join(descriptions) if len(descriptions) > 1 else (descriptions[0] if descriptions else ""),
             "severity": best_severity,
             "involved_clients": sorted(merged_clients),
+            "deviating_clients": sorted(merged_deviating),
             "evidence": evidence,
         })
 
@@ -315,10 +377,11 @@ def _generate_executive_summary(
 
     if client_ranking:
         most_unique = client_ranking[0]
+        dev_count = most_unique.get("b_class_deviating", most_unique["b_class"])
         parts.append(
             f"The client with the most unique implementation choices is "
-            f"**{most_unique['client']}** (involved in {most_unique['total']} diffs, "
-            f"{most_unique['b_class']} B-class)."
+            f"**{most_unique['client']}** (deviating in {dev_count} B-class diffs, "
+            f"involved in {most_unique['total']} total diffs)."
         )
 
     if force_stopped:
@@ -367,7 +430,8 @@ def write_diff_report(state: dict[str, Any]) -> Path:
         d["severity"] = _normalize_severity(d)
 
     # ── Compute analytics ──────────────────────────────────────────────
-    wf_summary = _per_workflow_summary(a_diffs, b_diffs, total_transitions)
+    client_lsgs = state.get("client_lsgs", {})
+    wf_summary = _per_workflow_summary(a_diffs, b_diffs, total_transitions, client_lsgs)
     client_ranking = _per_client_ranking(a_diffs, b_diffs)
     agreement_wfs = _agreement_workflows(a_diffs, b_diffs)
     exec_summary = _generate_executive_summary(
@@ -429,12 +493,13 @@ def write_diff_report(state: dict[str, Any]) -> Path:
     lines.extend([
         "## Per-Client Deviation Ranking",
         "",
-        "| Client | A-class | B-class | Total Diffs Involved |",
-        "|--------|---------|---------|----------------------|",
+        "| Client | A-class | B-class (involved) | B-class (deviating) | Total |",
+        "|--------|---------|--------------------|--------------------|-------|",
     ])
     for row in client_ranking:
         lines.append(
             f"| **{row['client']}** | {row['a_class']} | {row['b_class']} "
+            f"| {row.get('b_class_deviating', row['b_class'])} "
             f"| {row['total']} |"
         )
     lines.append("")
@@ -600,7 +665,8 @@ def write_diff_report_json(state: dict[str, Any]) -> Path:
     for d in b_diffs:
         d["severity"] = _normalize_severity(d)
 
-    wf_summary = _per_workflow_summary(a_diffs, b_diffs, total_transitions)
+    wf_summary = _per_workflow_summary(a_diffs, b_diffs, total_transitions,
+                                       state.get("client_lsgs", {}))
     client_ranking = _per_client_ranking(a_diffs, b_diffs)
     agreement_wfs = _agreement_workflows(a_diffs, b_diffs)
     exec_summary = _generate_executive_summary(
