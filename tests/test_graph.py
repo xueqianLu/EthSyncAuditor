@@ -19,7 +19,6 @@ from graph import (
     phase1_force_stop_node,
     phase2_converged_node,
     phase2_force_stop_node,
-    phase2_enter_deepdive_node,
     phase1_next_iter_node,
     phase2_next_iter_node,
     _graph_config,
@@ -156,24 +155,25 @@ def test_route_phase1_force_stop():
 
 
 def test_route_phase2_converged():
-    """A-class count == 0 → enter deep-dive (not final convergence)."""
+    """Converge when a_class_count == 0."""
     state = make_initial_state()
     state["a_class_count"] = 0
-    assert route_after_phase2_main(state) == "phase2_enter_deepdive"
+    assert route_after_phase2_main(state) == "phase2_converged"
 
 
 def test_route_phase2_converged_delta_stable():
-    """A-class delta stable → enter deep-dive."""
+    """Converge when A-class count delta between iterations is small."""
     state = make_initial_state()
     state["a_class_count"] = 10
     state["prev_a_class_count"] = 10  # delta = 0 → below threshold
     state["phase2_iteration"] = 3
-    assert route_after_phase2_main(state) == "phase2_enter_deepdive"
-    assert "deep-dive" in _graph_module._last_p2_convergence_reason.lower()
+    assert route_after_phase2_main(state) == "phase2_converged"
+    # Check that convergence reason was recorded
+    assert "delta stabilized" in _graph_module._last_p2_convergence_reason.lower()
 
 
 def test_route_phase2_converged_oscillation():
-    """A-class oscillation → enter deep-dive."""
+    """Converge when A-class count oscillates within a narrow band."""
     state = make_initial_state()
     state["a_class_count"] = 12
     state["prev_a_class_count"] = -1  # skip delta check
@@ -183,35 +183,8 @@ def test_route_phase2_converged_oscillation():
         {"iteration": 4, "a_class_count": 12, "b_class_count": 40, "logic_diff_rate": 0.7},
         {"iteration": 5, "a_class_count": 11, "b_class_count": 40, "logic_diff_rate": 0.7},
     ]
-    assert route_after_phase2_main(state) == "phase2_enter_deepdive"
-    assert "oscillat" in _graph_module._last_p2_convergence_reason.lower()
-
-
-def test_route_phase2_deepdive_converged():
-    """In deep-dive mode, B-class stable → final convergence."""
-    state = make_initial_state()
-    state["deepdive_active"] = True
-    state["deepdive_iteration"] = 2
-    state["phase2_iteration"] = 5
-    state["prev_b_class_count"] = 7
-    state["diff_report"] = {"b_class_diffs": [{}] * 7}  # 7 B-class
-    state["iteration_history"] = [
-        {"iteration": 4, "a_class_count": 0, "b_class_count": 7, "logic_diff_rate": 0.5},
-        {"iteration": 5, "a_class_count": 0, "b_class_count": 7, "logic_diff_rate": 0.5},
-    ]
     assert route_after_phase2_main(state) == "phase2_converged"
-    assert "deep-dive converged" in _graph_module._last_p2_convergence_reason.lower()
-
-
-def test_route_phase2_deepdive_max_iter():
-    """In deep-dive mode, max iterations → final convergence."""
-    state = make_initial_state()
-    state["deepdive_active"] = True
-    state["deepdive_iteration"] = _config.MAX_ITER_DEEPDIVE
-    state["phase2_iteration"] = 8
-    state["prev_b_class_count"] = 5
-    state["diff_report"] = {"b_class_diffs": [{}] * 10}  # changed
-    assert route_after_phase2_main(state) == "phase2_converged"
+    assert "oscillation" in _graph_module._last_p2_convergence_reason.lower()
 
 
 def test_route_phase2_force_stop():
@@ -248,17 +221,13 @@ def test_phase1_force_stop_node():
 
 def test_phase2_converged_node():
     state = make_initial_state()
-    # Set up deep-dive convergence so the router returns "phase2_converged"
-    state["deepdive_active"] = True
-    state["deepdive_iteration"] = _config.MAX_ITER_DEEPDIVE
-    state["phase2_iteration"] = 8
-    state["prev_b_class_count"] = 5
-    state["diff_report"] = {"b_class_diffs": [{}] * 10}
+    # Trigger the router first so _last_p2_convergence_reason is set
+    state["a_class_count"] = 0
     route_after_phase2_main(state)
     result = phase2_converged_node(state)
     assert result["converged_phase2"] is True
     assert "convergence_reason" in result
-    assert "deep-dive" in result["convergence_reason"].lower()
+    assert "Zero A-class" in result["convergence_reason"]
 
 
 def test_phase2_force_stop_node():
@@ -287,33 +256,6 @@ def test_phase2_next_iter_bumps():
     result = phase2_next_iter_node(state)
     assert result["phase2_iteration"] == 6
     assert result["prev_a_class_count"] == 15
-
-
-def test_phase2_next_iter_deepdive_bumps():
-    """In deep-dive mode, phase2_next_iter also bumps deepdive_iteration."""
-    state = make_initial_state()
-    state["phase2_iteration"] = 5
-    state["a_class_count"] = 0
-    state["deepdive_active"] = True
-    state["deepdive_iteration"] = 1
-    state["diff_report"] = {"b_class_diffs": [{}] * 3}
-    result = phase2_next_iter_node(state)
-    assert result["phase2_iteration"] == 6
-    assert result["deepdive_iteration"] == 2
-    assert result["prev_b_class_count"] == 3
-
-
-def test_phase2_enter_deepdive_node():
-    """phase2_enter_deepdive_node activates deep-dive mode."""
-    state = make_initial_state()
-    state["phase2_iteration"] = 3
-    state["a_class_count"] = 0
-    state["diff_report"] = {"b_class_diffs": [{}] * 7}
-    result = phase2_enter_deepdive_node(state)
-    assert result["deepdive_active"] is True
-    assert result["deepdive_iteration"] == 1
-    assert result["prev_b_class_count"] == 7
-    assert result["phase2_iteration"] == 4
 
 
 # ── End-to-end pipeline ────────────────────────────────────────────────

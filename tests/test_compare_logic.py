@@ -7,7 +7,6 @@ from agents.phase2_main_agent import (
     _make_rename_description, _deterministic_compare,
     _classify_severity, _build_evidence_map,
     _backfill_evidence_from_lsgs, _infer_deviating_clients,
-    _extract_vulnerability_patterns, _security_note_denies_impact,
 )
 
 
@@ -344,101 +343,6 @@ def test_evidence_in_deterministic_compare():
     print("  OK: evidence in deterministic compare")
 
 
-def test_severity_downgrade_on_no_security_impact():
-    """MAJOR keyword match is downgraded to MINOR when security_note denies impact."""
-    # "architectural" matches MAJOR keywords, but security_note says no impact
-    assert _classify_severity({
-        "state_id": "attestation_generate.N/A",
-        "description": "Prysm uses a terminal model, others use cyclic architectural model",
-        "security_note": "This is a purely architectural difference with no direct security impact.",
-    }) == "MINOR"
-
-    # Same keywords WITHOUT denial → stays MAJOR
-    assert _classify_severity({
-        "state_id": "attestation_generate.N/A",
-        "description": "Prysm uses a terminal model, others use cyclic architectural model",
-        "security_note": "Could lead to missed duties under race conditions.",
-    }) == "MAJOR"
-
-    print("  OK: severity downgrade on no security impact")
-
-
-def test_security_note_denies_impact():
-    """_security_note_denies_impact detects denial phrases."""
-    assert _security_note_denies_impact("no direct security impact") is True
-    assert _security_note_denies_impact("purely architectural difference") is True
-    assert _security_note_denies_impact("this could lead to eclipse attacks") is False
-    assert _security_note_denies_impact("") is False
-    print("  OK: _security_note_denies_impact")
-
-
-def test_extract_vulnerability_patterns():
-    """_extract_vulnerability_patterns extracts attack surface categories."""
-    b_diffs = [
-        {
-            "workflow_id": "initial_sync",
-            "transition_guard": "BlockBatchDoesNotConnect",
-            "description": "Lighthouse bans the peer, Prysm only decreases score",
-            "security_note": "eclipse attack surface due to lenient peer penalty",
-            "severity": "MAJOR",
-            "deviating_clients": ["lighthouse"],
-        },
-        {
-            "workflow_id": "execute_layer_relation",
-            "transition_guard": "OptimisticSyncDepthExceedsLimit",
-            "description": "Guard missing in Grandine",
-            "security_note": "missing safety guard — depth limit absent",
-            "severity": "CRITICAL",
-            "deviating_clients": ["grandine"],
-        },
-        {
-            "workflow_id": "regular_sync",
-            "transition_guard": "BlockIsAwaitingBlobs",
-            "description": "Teku rejects block when blobs timeout",
-            "security_note": "timeout rejection leads to minority fork",
-            "severity": "CRITICAL",
-            "deviating_clients": ["teku"],
-        },
-    ]
-    patterns = _extract_vulnerability_patterns(b_diffs)
-    categories = {p["category"] for p in patterns}
-
-    assert "peer_penalty_divergence" in categories
-    assert "missing_safety_guard" in categories
-    assert "timeout_rejection_divergence" in categories
-    assert len(patterns) == 3  # one per category
-
-    # Check structure
-    peer_pat = [p for p in patterns if p["category"] == "peer_penalty_divergence"][0]
-    assert peer_pat["example_workflow"] == "initial_sync"
-    assert peer_pat["severity"] == "MAJOR"
-
-    print("  OK: _extract_vulnerability_patterns")
-
-
-def test_extract_vulnerability_patterns_dedup():
-    """_extract_vulnerability_patterns deduplicates by category."""
-    b_diffs = [
-        {
-            "description": "Peer ban difference in initial_sync",
-            "security_note": "eclipse via lenient peer penalty",
-            "workflow_id": "initial_sync", "transition_guard": "G1",
-            "severity": "MAJOR", "deviating_clients": ["prysm"],
-        },
-        {
-            "description": "Peer ban difference in regular_sync",
-            "security_note": "peer penalty divergence again",
-            "workflow_id": "regular_sync", "transition_guard": "G2",
-            "severity": "MAJOR", "deviating_clients": ["prysm"],
-        },
-    ]
-    patterns = _extract_vulnerability_patterns(b_diffs)
-    # Both match peer_penalty_divergence → only 1 pattern
-    assert len(patterns) == 1
-    assert patterns[0]["category"] == "peer_penalty_divergence"
-    print("  OK: _extract_vulnerability_patterns dedup")
-
-
 if __name__ == "__main__":
     print("Running comparison logic tests...")
     test_jaccard()
@@ -457,9 +361,5 @@ if __name__ == "__main__":
     test_infer_deviating_clients_already_set()
     test_infer_deviating_clients_no_marker()
     test_evidence_in_deterministic_compare()
-    test_severity_downgrade_on_no_security_impact()
-    test_security_note_denies_impact()
-    test_extract_vulnerability_patterns()
-    test_extract_vulnerability_patterns_dedup()
     print("\n=== ALL TESTS PASSED ===")
 

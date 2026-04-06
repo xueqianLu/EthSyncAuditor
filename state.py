@@ -289,10 +289,3 @@ class GlobalState(TypedDict, total=False):
     discovery_reports: Annotated[list[dict], _merge_lists]
     a_class_feedback: Annotated[list[dict], _replace]
     sparsity_hints: Annotated[list[dict], _replace]
-
-    # ── Deep-dive phase (post A-class convergence) ────────────────────────
-    deepdive_active: bool                          # True when in deep-dive mode
-    deepdive_iteration: int                        # iterations since deep-dive started
-    prev_b_class_count: Annotated[int, _replace]   # for B-class stability check
-    known_vulnerability_patterns: Annotated[list[dict], _replace]  # extracted from B-class
-

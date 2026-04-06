@@ -194,36 +194,16 @@ def _classify_severity(diff: dict) -> str:
         "fundamental", "architectural",
     ]
     if any(kw in combined for kw in major_keywords):
-        # Downgrade to MINOR if security_note explicitly denies impact
-        if _security_note_denies_impact(sec_note):
-            return "MINOR"
         return "MAJOR"
 
     # Check if only a minority of clients deviates (1-2 out of 5)
     deviating = diff.get("deviating_clients", [])
     involved = diff.get("involved_clients", [])
     if deviating and len(deviating) <= 2 and len(involved) >= 4:
-        # But downgrade if security_note explicitly denies impact
-        if _security_note_denies_impact(sec_note):
-            return "MINOR"
         return "MAJOR"  # Minority deviation → likely exploitable
 
     # ── MINOR: everything else ──────────────────────────────────────────
     return "MINOR"
-
-
-def _security_note_denies_impact(sec_note: str) -> bool:
-    """Return True if the security_note explicitly says there is no impact."""
-    deny_phrases = [
-        "no direct security",
-        "no security impact",
-        "no immediate security",
-        "purely architectural",
-        "no exploitable",
-        "limited security",
-        "no practical security",
-    ]
-    return any(p in sec_note for p in deny_phrases)
 
 
 def _infer_deviating_clients(diff: dict) -> list[str]:
@@ -303,59 +283,6 @@ def _infer_deviating_clients(diff: dict) -> list[str]:
     return []
 
 
-# ── Vulnerability pattern extraction ────────────────────────────────────
-
-
-def _extract_vulnerability_patterns(b_class_diffs: list[dict]) -> list[dict]:
-    """Extract reusable vulnerability patterns from B-class findings.
-
-    These patterns are fed back into Phase 2 Sub-Agent prompts so the LLM
-    can search for similar issues in other workflows / states.
-    """
-    # Category keywords → pattern category
-    _CATEGORY_RULES = [
-        (["ban", "peer penalty", "penalize", "peer score", "disconnect", "eclipse"],
-         "peer_penalty_divergence",
-         "Peer penalty severity differs (ban vs score-decrease) — lenient clients are easier to eclipse-attack"),
-        (["slashing", "slashable", "weak subjectivity", "finality", "safety guard",
-          "missing", "absent", "not present", "lacks", "depth limit", "optimistic"],
-         "missing_safety_guard",
-         "A safety guard or depth limit is present in some clients but missing in others"),
-        (["timeout", "stall", "recovery", "backoff", "retry", "reject", "blob"],
-         "timeout_rejection_divergence",
-         "Different timeout/rejection strategies — can be exploited to cause stalls or minority forks"),
-        (["reorg", "fork choice", "fork-choice", "invalidat", "cascade", "rollback",
-          "circuit breaker"],
-         "fork_choice_divergence",
-         "Different fork-choice / EL-error handling — potential for divergent chain views"),
-    ]
-
-    patterns: list[dict] = []
-    seen_categories: set[str] = set()
-
-    for diff in b_class_diffs:
-        desc = (diff.get("description", "") or "").lower()
-        sec_note = (diff.get("security_note", "") or "").lower()
-        combined = desc + " " + sec_note
-
-        for keywords, category, category_desc in _CATEGORY_RULES:
-            if category in seen_categories:
-                continue
-            if any(kw in combined for kw in keywords):
-                seen_categories.add(category)
-                patterns.append({
-                    "category": category,
-                    "category_description": category_desc,
-                    "example_workflow": diff.get("workflow_id", ""),
-                    "example_guard": diff.get("transition_guard", ""),
-                    "example_description": diff.get("description", ""),
-                    "deviating_clients": diff.get("deviating_clients", []),
-                    "severity": diff.get("severity", ""),
-                })
-
-    return patterns
-
-
 # ── Builder ─────────────────────────────────────────────────────────────
 
 
@@ -371,8 +298,6 @@ def build_phase2_main_agent(llm=None, callbacks=None):
         iteration = state.get("phase2_iteration", 1)
         guards = state.get("guards", [])
         actions = state.get("actions", [])
-        deepdive_active = state.get("deepdive_active", False)
-        known_patterns = state.get("known_vulnerability_patterns", [])
 
         # Compute per-client sparsity hints for sub-agents
         sparsity_hints = compute_lsg_sparsity(client_lsgs)
@@ -390,8 +315,6 @@ def build_phase2_main_agent(llm=None, callbacks=None):
                 iteration=iteration,
                 guard_names=[g.get("name", "?") for g in guards],
                 action_names=[a.get("name", "?") for a in actions],
-                deepdive_active=deepdive_active,
-                known_vulnerability_patterns=known_patterns,
             )
             try:
                 chain = llm.with_structured_output(DiffReport)
@@ -419,8 +342,6 @@ def build_phase2_main_agent(llm=None, callbacks=None):
                 _backfill_evidence_from_lsgs(b_diffs_out, client_lsgs)
                 a_diffs_out = [d.model_dump() for d in report.a_class_diffs]
                 _backfill_evidence_from_lsgs(a_diffs_out, client_lsgs)
-                # Extract vulnerability patterns for deep-dive feedback
-                vuln_patterns = _extract_vulnerability_patterns(b_diffs_out)
                 return {
                     "diff_report": {
                         "a_class_diffs": a_diffs_out,
@@ -432,7 +353,6 @@ def build_phase2_main_agent(llm=None, callbacks=None):
                     "a_class_feedback": a_feedback,
                     "a_class_count": n_a,
                     "sparsity_hints": sparsity_hints,
-                    "known_vulnerability_patterns": vuln_patterns,
                 }
             except Exception:
                 logger.error("LLM call failed for phase2_main", exc_info=True)
@@ -442,11 +362,7 @@ def build_phase2_main_agent(llm=None, callbacks=None):
             "[phase2_main_agent] deterministic comparison of %d clients (iter=%d)",
             len(client_lsgs), iteration,
         )
-        result = _deterministic_compare(client_lsgs, sparsity_hints)
-        # Extract vulnerability patterns from deterministic results too
-        b_diffs = result.get("diff_report", {}).get("b_class_diffs", [])
-        result["known_vulnerability_patterns"] = _extract_vulnerability_patterns(b_diffs)
-        return result
+        return _deterministic_compare(client_lsgs, sparsity_hints)
 
     return _run
 
