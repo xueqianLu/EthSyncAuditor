@@ -87,6 +87,58 @@ def _make_rename_description(
     return f"In {client}: " + "; ".join(parts)
 
 
+def _build_evidence_map(client_evidence: dict[str, Any]) -> dict:
+    """Build an ``{client_name: Evidence}`` dict from raw evidence values.
+
+    Accepts a mapping of ``{client_name: evidence_value}`` where each value
+    is either a dict (from the LSG transition), ``None``, or already absent.
+    Non-null entries are included in the output.
+    """
+    result: dict[str, Any] = {}
+    for client, ev in client_evidence.items():
+        if ev is not None and isinstance(ev, dict) and ev.get("file"):
+            result[client] = ev
+    return result
+
+
+def _backfill_evidence_from_lsgs(
+    diffs: list[dict],
+    client_lsgs: dict[str, dict],
+) -> None:
+    """Backfill empty evidence fields in diffs using client LSG transitions.
+
+    For each diff, look up the workflow/state/guard in the source client LSGs
+    and copy the evidence from the first matching transition.
+    """
+    # Build a lookup: (client, wf_id, guard) → evidence
+    ev_lookup: dict[tuple[str, str, str], dict] = {}
+    for client, lsg in client_lsgs.items():
+        for wf in lsg.get("workflows", []):
+            wf_id = wf.get("id", "")
+            for st in wf.get("states", []):
+                for tr in st.get("transitions", []):
+                    guard = tr.get("guard", "TRUE")
+                    ev = tr.get("evidence")
+                    if ev and isinstance(ev, dict) and ev.get("file"):
+                        key = (client, wf_id, guard)
+                        if key not in ev_lookup:
+                            ev_lookup[key] = ev
+
+    for diff in diffs:
+        if diff.get("evidence"):
+            continue  # already has evidence
+        wf_id = diff.get("workflow_id", "")
+        guard = diff.get("transition_guard", "")
+        involved = diff.get("involved_clients", [])
+        ev_map: dict[str, Any] = {}
+        for client in involved:
+            key = (client, wf_id, guard)
+            if key in ev_lookup:
+                ev_map[client] = ev_lookup[key]
+        if ev_map:
+            diff["evidence"] = ev_map
+
+
 def _classify_severity(diff: dict) -> str:
     """Classify a B-class diff by severity with **security focus**.
 
@@ -286,9 +338,13 @@ def build_phase2_main_agent(llm=None, callbacks=None):
                     # Re-classify severity with security-focused rules
                     dd["severity"] = _classify_severity(dd)
                     b_diffs_out.append(dd)
+                # Backfill evidence from client LSGs for diffs missing it
+                _backfill_evidence_from_lsgs(b_diffs_out, client_lsgs)
+                a_diffs_out = [d.model_dump() for d in report.a_class_diffs]
+                _backfill_evidence_from_lsgs(a_diffs_out, client_lsgs)
                 return {
                     "diff_report": {
-                        "a_class_diffs": [d.model_dump() for d in report.a_class_diffs],
+                        "a_class_diffs": a_diffs_out,
                         "b_class_diffs": b_diffs_out,
                         "logic_diff_rate": recomputed_rate,
                         "total_transitions": report.total_transitions or (n_a + n_b),
@@ -335,7 +391,7 @@ def _deterministic_compare(
     total_items = 0
     all_clients = set(client_lsgs.keys())
 
-    # ── 1. Index: wf_id → state_cat → client → [(guard, actions_fs, next_cat)]
+    # ── 1. Index: wf_id → state_cat → client → [(guard, actions_fs, next_cat, evidence)]
     wf_cat_idx: dict[str, dict[str, dict[str, list[tuple]]]] = defaultdict(
         lambda: defaultdict(lambda: defaultdict(list))
     )
@@ -349,7 +405,8 @@ def _deterministic_compare(
                     guard = tr.get("guard", "TRUE")
                     acts = frozenset(tr.get("actions", []))
                     nc = _next_cat(tr.get("next_state", ""))
-                    wf_cat_idx[wf_id][cat][client].append((guard, acts, nc))
+                    ev = tr.get("evidence")  # Evidence dict or None
+                    wf_cat_idx[wf_id][cat][client].append((guard, acts, nc, ev))
 
     # ── 2. Compare within each (wf_id, cat) group ──────────────────────
     for wf_id, cat_map in wf_cat_idx.items():
@@ -372,10 +429,10 @@ def _deterministic_compare(
             candidates = sorted(c for c in clients_here if len(client_trs[c]) == max_trs)
             if len(candidates) > 1:
                 def _vocab_overlap(c: str) -> int:
-                    guards_c = {g for g, _, _ in client_trs[c]}
+                    guards_c = {g for g, _, _, _ in client_trs[c]}
                     score = 0
                     for other_c in clients_here - {c}:
-                        guards_o = {g for g, _, _ in client_trs[other_c]}
+                        guards_o = {g for g, _, _, _ in client_trs[other_c]}
                         score += len(guards_c & guards_o)
                     return score
                 ref_client = max(candidates, key=_vocab_overlap)
@@ -388,8 +445,8 @@ def _deterministic_compare(
                 matched_other: set[int] = set()
 
                 # ── Pass 1: exact match ─────────────────────────────────
-                for ri, (rg, ra, rn) in enumerate(ref_transitions):
-                    for oj, (og, oa, on) in enumerate(other_transitions):
+                for ri, (rg, ra, rn, _rev) in enumerate(ref_transitions):
+                    for oj, (og, oa, on, _oev) in enumerate(other_transitions):
                         if oj in matched_other:
                             continue
                         if rg == og and ra == oa:
@@ -398,11 +455,11 @@ def _deterministic_compare(
                             break
 
                 # ── Pass 2: similarity match (A1/A2) ───────────────────
-                for ri, (rg, ra, rn) in enumerate(ref_transitions):
+                for ri, (rg, ra, rn, _rev) in enumerate(ref_transitions):
                     if ri in matched_ref:
                         continue
                     best_score, best_j = 0.0, -1
-                    for oj, (og, oa, on) in enumerate(other_transitions):
+                    for oj, (og, oa, on, _oev) in enumerate(other_transitions):
                         if oj in matched_other:
                             continue
                         s = _transition_similarity(rg, ra, rn, og, oa, on)
@@ -411,7 +468,7 @@ def _deterministic_compare(
                     if best_score >= _MATCH_THRESHOLD and best_j >= 0:
                         matched_ref.add(ri)
                         matched_other.add(best_j)
-                        og, oa, on = other_transitions[best_j]
+                        og, oa, on, oev = other_transitions[best_j]
                         a_diffs.append({
                             "workflow_id": wf_id,
                             "state_id": f"{wf_id}.{cat}",
@@ -421,7 +478,9 @@ def _deterministic_compare(
                                 other_client, rg, og, ra, oa,
                             ),
                             "involved_clients": sorted([ref_client, other_client]),
-                            "evidence": {},
+                            "evidence": _build_evidence_map(
+                                {ref_client: _rev, other_client: oev},
+                            ),
                         })
 
                 # ── Pass 3: positional fallback (A3) ───────────────────
@@ -439,8 +498,8 @@ def _deterministic_compare(
                 for k in range(pair_count):
                     ri = unmatched_ref[k]
                     oj = unmatched_other[k]
-                    rg, ra, rn = ref_transitions[ri]
-                    og, oa, on = other_transitions[oj]
+                    rg, ra, rn, rev = ref_transitions[ri]
+                    og, oa, on, oev = other_transitions[oj]
                     matched_ref.add(ri)
                     matched_other.add(oj)
                     a_diffs.append({
@@ -452,7 +511,9 @@ def _deterministic_compare(
                             other_client, rg, og, ra, oa,
                         ),
                         "involved_clients": sorted([ref_client, other_client]),
-                        "evidence": {},
+                        "evidence": _build_evidence_map(
+                            {ref_client: rev, other_client: oev},
+                        ),
                     })
 
                 # ── Count all ref transitions as comparison items ───────
@@ -462,7 +523,7 @@ def _deterministic_compare(
                 for ri in range(len(ref_transitions)):
                     if ri in matched_ref:
                         continue
-                    rg, ra, rn = ref_transitions[ri]
+                    rg, ra, rn, rev = ref_transitions[ri]
                     diff_entry = {
                         "workflow_id": wf_id,
                         "state_id": f"{wf_id}.{cat}",
@@ -475,7 +536,7 @@ def _deterministic_compare(
                         ),
                         "involved_clients": sorted([ref_client, other_client]),
                         "deviating_clients": [other_client],
-                        "evidence": {},
+                        "evidence": _build_evidence_map({ref_client: rev}),
                     }
                     diff_entry["severity"] = _classify_severity(diff_entry)
                     b_diffs.append(diff_entry)
@@ -484,7 +545,7 @@ def _deterministic_compare(
                 for oj in range(len(other_transitions)):
                     if oj in matched_other:
                         continue
-                    og, oa, on = other_transitions[oj]
+                    og, oa, on, oev = other_transitions[oj]
                     total_items += 1
                     diff_entry = {
                         "workflow_id": wf_id,
@@ -498,14 +559,14 @@ def _deterministic_compare(
                         ),
                         "involved_clients": sorted([ref_client, other_client]),
                         "deviating_clients": [other_client],
-                        "evidence": {},
+                        "evidence": _build_evidence_map({other_client: oev}),
                     }
                     diff_entry["severity"] = _classify_severity(diff_entry)
                     b_diffs.append(diff_entry)
 
             # Clients that don't have this state category at all
             for c in sorted(all_clients - clients_here):
-                for ref_g, ref_a, ref_n in ref_transitions:
+                for ref_g, ref_a, ref_n, ref_ev in ref_transitions:
                     total_items += 1
                     diff_entry = {
                         "workflow_id": wf_id,
@@ -519,7 +580,7 @@ def _deterministic_compare(
                         ),
                         "involved_clients": sorted(list(clients_here) + [c]),
                         "deviating_clients": [c],
-                        "evidence": {},
+                        "evidence": _build_evidence_map({ref_client: ref_ev}),
                     }
                     diff_entry["severity"] = _classify_severity(diff_entry)
                     b_diffs.append(diff_entry)

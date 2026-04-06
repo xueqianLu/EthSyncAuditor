@@ -5,7 +5,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from agents.phase2_main_agent import (
     _jaccard, _next_cat, _transition_similarity,
     _make_rename_description, _deterministic_compare,
-    _classify_severity,
+    _classify_severity, _build_evidence_map,
+    _backfill_evidence_from_lsgs, _infer_deviating_clients,
 )
 
 
@@ -177,6 +178,171 @@ def test_classify_severity():
     print("  OK: _classify_severity")
 
 
+def test_build_evidence_map():
+    """_build_evidence_map filters None and empty entries."""
+    ev = _build_evidence_map({
+        "prysm": {"file": "sync.go", "function": "runSync", "lines": [10, 20]},
+        "lighthouse": None,
+        "grandine": {},
+        "teku": {"file": "Sync.java", "function": "doSync", "lines": [5, 15]},
+    })
+    assert "prysm" in ev
+    assert "teku" in ev
+    assert "lighthouse" not in ev
+    assert "grandine" not in ev
+    assert ev["prysm"]["file"] == "sync.go"
+    print("  OK: _build_evidence_map")
+
+
+def test_backfill_evidence_from_lsgs():
+    """_backfill_evidence_from_lsgs populates empty evidence from LSG transitions."""
+    client_lsgs = {
+        "prysm": {"workflows": [{"id": "initial_sync", "states": [
+            {"id": "s1", "category": "validate", "transitions": [
+                {"guard": "RespRecv", "actions": ["Validate"],
+                 "next_state": "s2",
+                 "evidence": {"file": "sync.go", "function": "onResp", "lines": [42, 60]}},
+            ]},
+        ]}]},
+    }
+    diffs = [
+        {
+            "workflow_id": "initial_sync",
+            "transition_guard": "RespRecv",
+            "involved_clients": ["prysm", "lighthouse"],
+            "evidence": {},
+        },
+        {
+            "workflow_id": "initial_sync",
+            "transition_guard": "UnknownGuard",
+            "involved_clients": ["prysm"],
+            "evidence": {},
+        },
+    ]
+    _backfill_evidence_from_lsgs(diffs, client_lsgs)
+
+    # First diff should have evidence backfilled for prysm
+    assert "prysm" in diffs[0]["evidence"]
+    assert diffs[0]["evidence"]["prysm"]["file"] == "sync.go"
+
+    # Second diff has no matching transition → still empty
+    assert diffs[1]["evidence"] == {}
+    print("  OK: _backfill_evidence_from_lsgs")
+
+
+def test_backfill_evidence_preserves_existing():
+    """_backfill_evidence_from_lsgs skips diffs that already have evidence."""
+    client_lsgs = {
+        "prysm": {"workflows": [{"id": "wf1", "states": [
+            {"id": "s1", "category": "x", "transitions": [
+                {"guard": "G1", "actions": [], "next_state": "s2",
+                 "evidence": {"file": "new.go", "function": "f", "lines": [1]}},
+            ]},
+        ]}]},
+    }
+    original_ev = {"prysm": {"file": "old.go", "function": "g", "lines": [99]}}
+    diffs = [{
+        "workflow_id": "wf1",
+        "transition_guard": "G1",
+        "involved_clients": ["prysm"],
+        "evidence": dict(original_ev),
+    }]
+    _backfill_evidence_from_lsgs(diffs, client_lsgs)
+    # Should keep the original evidence, not overwrite
+    assert diffs[0]["evidence"]["prysm"]["file"] == "old.go"
+    print("  OK: _backfill_evidence_preserves_existing")
+
+
+def test_infer_deviating_clients_contrast():
+    """_infer_deviating_clients identifies minority clients from contrast markers."""
+    diff = {
+        "description": (
+            "Prysm and Lighthouse model an explicit stalled recovery state. "
+            "However, Grandine and Teku handle stall detection inline."
+        ),
+        "involved_clients": ["prysm", "lighthouse", "grandine", "teku"],
+    }
+    result = _infer_deviating_clients(diff)
+    # "Prysm and Lighthouse" are before the contrast, "Grandine and Teku" after
+    # Both groups have 2 clients — but the after-contrast group deviates
+    assert len(result) == 2
+    print(f"  Inferred deviating: {result}")
+    print("  OK: _infer_deviating_clients (contrast)")
+
+
+def test_infer_deviating_clients_unique():
+    """_infer_deviating_clients identifies single unique client."""
+    diff = {
+        "description": (
+            "Prysm's LSG includes an explicit stalled state. "
+            "Other clients do not have an equivalent state."
+        ),
+        "involved_clients": ["prysm", "lighthouse", "grandine", "teku", "lodestar"],
+    }
+    result = _infer_deviating_clients(diff)
+    assert result == ["prysm"]
+    print("  OK: _infer_deviating_clients (unique)")
+
+
+def test_infer_deviating_clients_already_set():
+    """_infer_deviating_clients returns existing value if already set."""
+    diff = {
+        "description": "Some description",
+        "involved_clients": ["prysm", "lighthouse"],
+        "deviating_clients": ["prysm"],
+    }
+    result = _infer_deviating_clients(diff)
+    assert result == ["prysm"]
+    print("  OK: _infer_deviating_clients (already set)")
+
+
+def test_infer_deviating_clients_no_marker():
+    """_infer_deviating_clients returns empty when no contrast marker found."""
+    diff = {
+        "description": "All clients handle validation similarly.",
+        "involved_clients": ["prysm", "lighthouse", "grandine"],
+    }
+    result = _infer_deviating_clients(diff)
+    assert result == []
+    print("  OK: _infer_deviating_clients (no marker)")
+
+
+def test_evidence_in_deterministic_compare():
+    """Evidence from LSG transitions flows into diff entries."""
+    client_lsgs = {
+        "prysm": {"workflows": [{"id": "initial_sync", "states": [
+            {"id": "s1", "category": "validate", "transitions": [
+                {"guard": "RespRecv", "actions": ["Validate"],
+                 "next_state": "s2",
+                 "evidence": {"file": "sync.go", "function": "onResp", "lines": [10, 30]}},
+                {"guard": "Timeout", "actions": ["Penalize"],
+                 "next_state": "s3",
+                 "evidence": {"file": "timeout.go", "function": "onTimeout", "lines": [5, 12]}},
+            ]},
+        ]}]},
+        "lighthouse": {"workflows": [{"id": "initial_sync", "states": [
+            {"id": "s1", "category": "validate", "transitions": [
+                {"guard": "RespRecv", "actions": ["Validate"],
+                 "next_state": "s2",
+                 "evidence": {"file": "sync.rs", "function": "on_resp", "lines": [20, 40]}},
+                # Missing Timeout → B-class diff
+            ]},
+        ]}]},
+    }
+    result = _deterministic_compare(client_lsgs, [])
+    dr = result["diff_report"]
+
+    # B-class diff for missing Timeout should have evidence from prysm
+    b_timeout = [d for d in dr["b_class_diffs"]
+                 if "Timeout" in d.get("transition_guard", "")]
+    assert len(b_timeout) >= 1, f"Expected B-class for Timeout, got: {dr['b_class_diffs']}"
+    ev = b_timeout[0].get("evidence", {})
+    assert "prysm" in ev, f"Expected prysm evidence, got: {ev}"
+    assert ev["prysm"]["file"] == "timeout.go"
+
+    print("  OK: evidence in deterministic compare")
+
+
 if __name__ == "__main__":
     print("Running comparison logic tests...")
     test_jaccard()
@@ -187,5 +353,13 @@ if __name__ == "__main__":
     test_rename_description()
     test_full_comparison()
     test_classify_severity()
+    test_build_evidence_map()
+    test_backfill_evidence_from_lsgs()
+    test_backfill_evidence_preserves_existing()
+    test_infer_deviating_clients_contrast()
+    test_infer_deviating_clients_unique()
+    test_infer_deviating_clients_already_set()
+    test_infer_deviating_clients_no_marker()
+    test_evidence_in_deterministic_compare()
     print("\n=== ALL TESTS PASSED ===")
 
