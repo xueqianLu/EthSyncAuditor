@@ -129,9 +129,6 @@ def build_phase2_sub_agent(client_name: str, llm=None, callbacks=None):
             if h.get("client") == client_name
         ]
 
-        # ── B-class focus mode (post A-class convergence) ────────────────
-        b_class_focus = state.get("b_class_focus", False)
-
         template = _load_prompt_template()
         _prompt = template.render(
             client_name=client_name,
@@ -141,7 +138,6 @@ def build_phase2_sub_agent(client_name: str, llm=None, callbacks=None):
             previous_lsg_yaml=previous_lsg_yaml,
             iteration=iteration,
             sparsity_hints=sparsity_hints,
-            b_class_focus=b_class_focus,
         )
 
         if llm is not None:

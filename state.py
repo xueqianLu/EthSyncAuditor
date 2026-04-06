@@ -278,11 +278,6 @@ class GlobalState(TypedDict, total=False):
     prev_a_class_count: Annotated[int, _replace]     # previous iteration A-class diff count
     iteration_history: Annotated[list[dict], _merge_lists]  # per-iter metrics
 
-    # ── B-class discovery phase (post A-class convergence) ───────────────
-    b_class_focus: bool                   # True when in B-class discovery mode
-    b_class_focus_iteration: int          # iteration counter within B-class phase
-    prev_b_class_count: Annotated[int, _replace]  # previous B-class count for stability
-
     # ── Preprocessing ───────────────────────────────────────────────────
     preprocess_done: bool
     preprocess_status: Annotated[dict[str, dict], _merge_dicts]

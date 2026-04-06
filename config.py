@@ -19,17 +19,6 @@ P2_A_CLASS_CONVERGENCE_THRESHOLD: float = 0.10
 OSCILLATION_WINDOW: int = 3
 OSCILLATION_BAND: int = 2
 
-# ── B-class discovery iterations (post A-class convergence) ─────────────
-# After A-class vocabulary alignment converges, the system continues for
-# up to MAX_ITER_B_CLASS additional rounds with the sub-agent prompts
-# switched to "B-class focus mode", encouraging deeper LSG extraction
-# for security-relevant divergence discovery.
-MAX_ITER_B_CLASS: int = 3
-# B-class focus converges when B-class count is stable (change ≤ threshold)
-# for B_CLASS_STABLE_WINDOW consecutive iterations.
-B_CLASS_STABLE_WINDOW: int = 2
-B_CLASS_CHANGE_THRESHOLD: int = 1  # max allowed B-class count change per iter
-
 # ── Client names (order used everywhere) ────────────────────────────────
 CLIENT_NAMES: list[str] = [
     "prysm",

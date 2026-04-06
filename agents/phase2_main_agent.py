@@ -298,7 +298,6 @@ def build_phase2_main_agent(llm=None, callbacks=None):
         iteration = state.get("phase2_iteration", 1)
         guards = state.get("guards", [])
         actions = state.get("actions", [])
-        b_class_focus = state.get("b_class_focus", False)
 
         # Compute per-client sparsity hints for sub-agents
         sparsity_hints = compute_lsg_sparsity(client_lsgs)
@@ -316,7 +315,6 @@ def build_phase2_main_agent(llm=None, callbacks=None):
                 iteration=iteration,
                 guard_names=[g.get("name", "?") for g in guards],
                 action_names=[a.get("name", "?") for a in actions],
-                b_class_focus=b_class_focus,
             )
             try:
                 chain = llm.with_structured_output(DiffReport)

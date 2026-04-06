@@ -104,10 +104,6 @@ def make_initial_state() -> dict[str, Any]:
         "discovery_reports": [],
         "a_class_feedback": [],
         "sparsity_hints": [],
-        # B-class discovery phase
-        "b_class_focus": False,
-        "b_class_focus_iteration": 0,
-        "prev_b_class_count": -1,
     }
 
 
@@ -418,16 +414,15 @@ def phase2_fanout(state: GlobalState) -> list[Send]:
 def route_after_phase2_main(state: GlobalState) -> str:
     """Convergence / max-iter check for Phase 2.
 
-    Phase 2 has two stages:
+    Phase 2 converges when A-class diffs (vocabulary misalignment) stabilize,
+    NOT when B-class diffs (inherent design differences) disappear — B-class
+    diffs are the desired output of the audit, not a convergence signal.
 
-    **Stage 1 — Vocabulary alignment** (``b_class_focus=False``):
-    Converges when A-class diffs stabilize (same criteria as before).
-    Instead of terminating, transitions to Stage 2.
-
-    **Stage 2 — B-class discovery** (``b_class_focus=True``):
-    Sub-agent prompts are in "B-class focus mode" — encouraging deeper LSG
-    extraction for security-relevant divergences.  Converges when B-class
-    count is stable or ``MAX_ITER_B_CLASS`` reached.
+    Convergence criteria (any one triggers):
+    1. ``a_class_count == 0`` — perfect vocabulary alignment.
+    2. A-class **delta** between consecutive iterations < threshold.
+    3. **Oscillation** detected — A-class count oscillates within a narrow band
+       for ``OSCILLATION_WINDOW`` consecutive iterations.
     """
     global _last_p2_convergence_reason
 
@@ -435,69 +430,18 @@ def route_after_phase2_main(state: GlobalState) -> str:
     a_class_count = state.get("a_class_count", -1)
     prev_a_class_count = state.get("prev_a_class_count", -1)
     history = state.get("iteration_history", [])
-    b_class_focus = state.get("b_class_focus", False)
-    b_class_focus_iteration = state.get("b_class_focus_iteration", 0)
-
-    # ════════════════════════════════════════════════════════════════════
-    # Stage 2: B-class focus mode — check B-class stability
-    # ════════════════════════════════════════════════════════════════════
-    if b_class_focus:
-        diff_report = state.get("diff_report", {})
-        b_count = len(diff_report.get("b_class_diffs", []))
-        prev_b_count = state.get("prev_b_class_count", -1)
-
-        # B-class stability check
-        if prev_b_count >= 0:
-            # Check if B-class has been stable for B_CLASS_STABLE_WINDOW iters
-            recent_b = [
-                h.get("b_class_count", 0)
-                for h in history[-config.B_CLASS_STABLE_WINDOW:]
-            ] if len(history) >= config.B_CLASS_STABLE_WINDOW else []
-
-            if (recent_b
-                    and max(recent_b) - min(recent_b) <= config.B_CLASS_CHANGE_THRESHOLD):
-                _last_p2_convergence_reason = (
-                    f"B-class discovery converged at iteration {iteration} "
-                    f"(b_class iter {b_class_focus_iteration}): B-class stable "
-                    f"at {b_count} over last {config.B_CLASS_STABLE_WINDOW} "
-                    f"rounds (values={recent_b})."
-                )
-                logger.info(
-                    "[router_phase2] B-CLASS CONVERGED — stable: %s",
-                    recent_b,
-                )
-                return "phase2_converged"
-
-        # Max B-class discovery iterations guard
-        if b_class_focus_iteration >= config.MAX_ITER_B_CLASS:
-            _last_p2_convergence_reason = (
-                f"MAX_ITER_B_CLASS ({config.MAX_ITER_B_CLASS}) reached at "
-                f"iteration {iteration}. B-class count: {b_count}."
-            )
-            logger.info(
-                "[router_phase2] B-CLASS MAX_ITER — stopping after %d rounds",
-                b_class_focus_iteration,
-            )
-            return "phase2_converged"
-
-        # Continue B-class discovery
-        return "phase2_next_iter"
-
-    # ════════════════════════════════════════════════════════════════════
-    # Stage 1: Vocabulary alignment — check A-class convergence
-    # ════════════════════════════════════════════════════════════════════
 
     # ── Criterion 1: zero A-class diffs ────────────────────────────────
     if a_class_count == 0:
         _last_p2_convergence_reason = (
             f"Zero A-class diffs at iteration {iteration} — "
-            f"perfect vocabulary alignment. Entering B-class discovery."
+            f"perfect vocabulary alignment achieved."
         )
         logger.info(
-            "[router_phase2] A-class CONVERGED at iter=%d — entering B-class focus",
+            "[router_phase2] CONVERGED at iter=%d — zero A-class diffs",
             iteration,
         )
-        return "phase2_enter_b_class_focus"
+        return "phase2_converged"
 
     # ── Criterion 2: A-class delta stabilization ───────────────────────
     if prev_a_class_count >= 0 and a_class_count >= 0:
@@ -507,13 +451,15 @@ def route_after_phase2_main(state: GlobalState) -> str:
             _last_p2_convergence_reason = (
                 f"A-class delta stabilized at iteration {iteration}: "
                 f"prev={prev_a_class_count}, cur={a_class_count}, "
-                f"delta_rate={delta_rate:.4f}. Entering B-class discovery."
+                f"delta_rate={delta_rate:.4f} < threshold "
+                f"{config.P2_A_CLASS_CONVERGENCE_THRESHOLD}."
             )
             logger.info(
-                "[router_phase2] A-class STABILIZED at iter=%d — entering B-class focus",
-                iteration,
+                "[router_phase2] CONVERGED at iter=%d — A-class delta "
+                "stabilized (prev=%d, cur=%d, delta_rate=%.4f)",
+                iteration, prev_a_class_count, a_class_count, delta_rate,
             )
-            return "phase2_enter_b_class_focus"
+            return "phase2_converged"
 
     # ── Criterion 3: oscillation detection ─────────────────────────────
     if len(history) >= config.OSCILLATION_WINDOW:
@@ -522,14 +468,16 @@ def route_after_phase2_main(state: GlobalState) -> str:
         if max(recent_a) - min(recent_a) <= config.OSCILLATION_BAND:
             _last_p2_convergence_reason = (
                 f"A-class oscillation detected at iteration {iteration}: "
-                f"last {config.OSCILLATION_WINDOW} values={recent_a}. "
-                f"Entering B-class discovery."
+                f"last {config.OSCILLATION_WINDOW} values={recent_a}, "
+                f"band={max(recent_a) - min(recent_a)} ≤ "
+                f"{config.OSCILLATION_BAND}."
             )
             logger.info(
-                "[router_phase2] A-class OSCILLATING at iter=%d — entering B-class focus",
-                iteration,
+                "[router_phase2] CONVERGED at iter=%d — A-class oscillation "
+                "detected over last %d iters: %s",
+                iteration, config.OSCILLATION_WINDOW, recent_a,
             )
-            return "phase2_enter_b_class_focus"
+            return "phase2_converged"
 
     # ── MAX_ITER guard ─────────────────────────────────────────────────
     if iteration >= config.MAX_ITER_PHASE2:
@@ -548,35 +496,8 @@ def route_after_phase2_main(state: GlobalState) -> str:
 
 
 def phase2_next_iter_node(state: GlobalState) -> dict[str, Any]:
-    """Bump Phase 2 iteration counter and carry forward tracking state."""
-    diff_report = state.get("diff_report", {})
-    b_count = len(diff_report.get("b_class_diffs", []))
-    result: dict[str, Any] = {
-        "phase2_iteration": state.get("phase2_iteration", 1) + 1,
-        "prev_a_class_count": state.get("a_class_count", -1),
-        "prev_b_class_count": b_count,
-    }
-    if state.get("b_class_focus"):
-        result["b_class_focus_iteration"] = state.get("b_class_focus_iteration", 0) + 1
-    return result
-
-
-def phase2_enter_b_class_focus_node(state: GlobalState) -> dict[str, Any]:
-    """Transition from A-class alignment to B-class discovery mode.
-
-    Activates B-class focus, bumps iteration, and preserves current B-class
-    count as the baseline for stability tracking.
-    """
-    diff_report = state.get("diff_report", {})
-    b_count = len(diff_report.get("b_class_diffs", []))
-    logger.info(
-        "[phase2_enter_b_class_focus] Entering B-class focus with %d known B-class diffs",
-        b_count,
-    )
+    """Bump Phase 2 iteration counter and carry forward prev_a_class_count."""
     return {
-        "b_class_focus": True,
-        "b_class_focus_iteration": 1,
-        "prev_b_class_count": b_count,
         "phase2_iteration": state.get("phase2_iteration", 1) + 1,
         "prev_a_class_count": state.get("a_class_count", -1),
     }
@@ -621,7 +542,6 @@ def build_graph() -> StateGraph:
     graph.add_node("phase2_next_iter", phase2_next_iter_node)
     graph.add_node("phase2_converged", phase2_converged_node)
     graph.add_node("phase2_force_stop", phase2_force_stop_node)
-    graph.add_node("phase2_enter_b_class_focus", phase2_enter_b_class_focus_node)
 
     # ── Entry point ─────────────────────────────────────────────────────
     graph.set_entry_point("preprocess")
@@ -695,20 +615,12 @@ def build_graph() -> StateGraph:
             "phase2_converged": "phase2_converged",
             "phase2_force_stop": "phase2_force_stop",
             "phase2_next_iter": "phase2_next_iter",
-            "phase2_enter_b_class_focus": "phase2_enter_b_class_focus",
         },
     )
 
     # ── Phase 2 iteration loop ─────────────────────────────────────────
     graph.add_conditional_edges(
         "phase2_next_iter",
-        lambda _s: "phase2_fanout",
-        {"phase2_fanout": "phase2_fanout"},
-    )
-
-    # ── B-class focus entry → back to Phase 2 fan-out ──────────────────
-    graph.add_conditional_edges(
-        "phase2_enter_b_class_focus",
         lambda _s: "phase2_fanout",
         {"phase2_fanout": "phase2_fanout"},
     )
