@@ -19,6 +19,7 @@ from graph import (
     phase1_force_stop_node,
     phase2_converged_node,
     phase2_force_stop_node,
+    phase2_enter_b_class_focus_node,
     phase1_next_iter_node,
     phase2_next_iter_node,
     _graph_config,
@@ -41,6 +42,7 @@ def test_make_initial_state_fields():
         "a_class_count", "prev_a_class_count", "iteration_history",
         "preprocess_done", "preprocess_status",
         "audit_log_paths", "discovery_reports", "a_class_feedback",
+        "b_class_focus", "b_class_focus_iteration", "prev_b_class_count",
     }
     assert expected_keys.issubset(set(s.keys()))
 
@@ -155,25 +157,24 @@ def test_route_phase1_force_stop():
 
 
 def test_route_phase2_converged():
-    """Converge when a_class_count == 0."""
+    """A-class count == 0 → enter B-class focus (not final convergence)."""
     state = make_initial_state()
     state["a_class_count"] = 0
-    assert route_after_phase2_main(state) == "phase2_converged"
+    assert route_after_phase2_main(state) == "phase2_enter_b_class_focus"
 
 
 def test_route_phase2_converged_delta_stable():
-    """Converge when A-class count delta between iterations is small."""
+    """A-class delta stable → enter B-class focus."""
     state = make_initial_state()
     state["a_class_count"] = 10
     state["prev_a_class_count"] = 10  # delta = 0 → below threshold
     state["phase2_iteration"] = 3
-    assert route_after_phase2_main(state) == "phase2_converged"
-    # Check that convergence reason was recorded
-    assert "delta stabilized" in _graph_module._last_p2_convergence_reason.lower()
+    assert route_after_phase2_main(state) == "phase2_enter_b_class_focus"
+    assert "b-class" in _graph_module._last_p2_convergence_reason.lower()
 
 
 def test_route_phase2_converged_oscillation():
-    """Converge when A-class count oscillates within a narrow band."""
+    """A-class oscillation → enter B-class focus."""
     state = make_initial_state()
     state["a_class_count"] = 12
     state["prev_a_class_count"] = -1  # skip delta check
@@ -183,8 +184,8 @@ def test_route_phase2_converged_oscillation():
         {"iteration": 4, "a_class_count": 12, "b_class_count": 40, "logic_diff_rate": 0.7},
         {"iteration": 5, "a_class_count": 11, "b_class_count": 40, "logic_diff_rate": 0.7},
     ]
-    assert route_after_phase2_main(state) == "phase2_converged"
-    assert "oscillation" in _graph_module._last_p2_convergence_reason.lower()
+    assert route_after_phase2_main(state) == "phase2_enter_b_class_focus"
+    assert "oscillat" in _graph_module._last_p2_convergence_reason.lower()
 
 
 def test_route_phase2_force_stop():
@@ -221,13 +222,17 @@ def test_phase1_force_stop_node():
 
 def test_phase2_converged_node():
     state = make_initial_state()
-    # Trigger the router first so _last_p2_convergence_reason is set
-    state["a_class_count"] = 0
+    # Set up B-class focus max-iter convergence
+    state["b_class_focus"] = True
+    state["b_class_focus_iteration"] = _config.MAX_ITER_B_CLASS
+    state["phase2_iteration"] = 8
+    state["prev_b_class_count"] = 5
+    state["diff_report"] = {"b_class_diffs": [{}] * 10}
     route_after_phase2_main(state)
     result = phase2_converged_node(state)
     assert result["converged_phase2"] is True
     assert "convergence_reason" in result
-    assert "Zero A-class" in result["convergence_reason"]
+    assert "b-class" in result["convergence_reason"].lower()
 
 
 def test_phase2_force_stop_node():
@@ -253,9 +258,65 @@ def test_phase2_next_iter_bumps():
     state = make_initial_state()
     state["phase2_iteration"] = 5
     state["a_class_count"] = 15
+    state["diff_report"] = {"b_class_diffs": [{}] * 3}
     result = phase2_next_iter_node(state)
     assert result["phase2_iteration"] == 6
     assert result["prev_a_class_count"] == 15
+    assert result["prev_b_class_count"] == 3
+
+
+def test_route_phase2_b_class_focus_converged():
+    """In B-class focus mode, B-class stable → final convergence."""
+    state = make_initial_state()
+    state["b_class_focus"] = True
+    state["b_class_focus_iteration"] = 2
+    state["phase2_iteration"] = 5
+    state["prev_b_class_count"] = 7
+    state["diff_report"] = {"b_class_diffs": [{}] * 7}
+    state["iteration_history"] = [
+        {"iteration": 4, "a_class_count": 0, "b_class_count": 7, "logic_diff_rate": 0.5},
+        {"iteration": 5, "a_class_count": 0, "b_class_count": 7, "logic_diff_rate": 0.5},
+    ]
+    assert route_after_phase2_main(state) == "phase2_converged"
+    assert "b-class" in _graph_module._last_p2_convergence_reason.lower()
+
+
+def test_route_phase2_b_class_focus_max_iter():
+    """In B-class focus mode, max iterations → final convergence."""
+    state = make_initial_state()
+    state["b_class_focus"] = True
+    state["b_class_focus_iteration"] = _config.MAX_ITER_B_CLASS
+    state["phase2_iteration"] = 8
+    state["prev_b_class_count"] = 5
+    state["diff_report"] = {"b_class_diffs": [{}] * 10}
+    assert route_after_phase2_main(state) == "phase2_converged"
+
+
+def test_phase2_next_iter_b_class_focus_bumps():
+    """In B-class focus mode, phase2_next_iter also bumps b_class_focus_iteration."""
+    state = make_initial_state()
+    state["phase2_iteration"] = 5
+    state["a_class_count"] = 0
+    state["b_class_focus"] = True
+    state["b_class_focus_iteration"] = 1
+    state["diff_report"] = {"b_class_diffs": [{}] * 3}
+    result = phase2_next_iter_node(state)
+    assert result["phase2_iteration"] == 6
+    assert result["b_class_focus_iteration"] == 2
+    assert result["prev_b_class_count"] == 3
+
+
+def test_phase2_enter_b_class_focus_node():
+    """phase2_enter_b_class_focus_node activates B-class focus mode."""
+    state = make_initial_state()
+    state["phase2_iteration"] = 3
+    state["a_class_count"] = 0
+    state["diff_report"] = {"b_class_diffs": [{}] * 7}
+    result = phase2_enter_b_class_focus_node(state)
+    assert result["b_class_focus"] is True
+    assert result["b_class_focus_iteration"] == 1
+    assert result["prev_b_class_count"] == 7
+    assert result["phase2_iteration"] == 4
 
 
 # ── End-to-end pipeline ────────────────────────────────────────────────
