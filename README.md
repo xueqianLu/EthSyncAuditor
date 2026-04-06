@@ -65,6 +65,8 @@ git clone https://github.com/xueqianLu/EthSyncAuditor.git
 cd EthSyncAuditor
 
 # Install dependencies
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 # Download client source code for analysis
