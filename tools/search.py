@@ -1,305 +1,316 @@
-"""Hybrid retrieval tools for EthAuditor.
+"""EthAuditor — Hybrid search tools for RAG retrieval.
 
-Provides two tool modes:
-- search_codebase: BM25 + Vector hybrid retrieval
-- search_codebase_by_workflow: callgraph-constrained hybrid retrieval
+Provides two search modes:
+  Mode A: search_codebase  — semantic hybrid search (Phase 1)
+  Mode B: search_codebase_by_workflow — call-graph directed hybrid (Phase 2)
 """
 
 from __future__ import annotations
 
-from collections import deque
-import importlib
+import json
+import logging
+import pickle
+from collections import defaultdict, deque
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
-from langchain_core.documents import Document
-from langchain_core.tools import tool
-
-from config import BM25_VECTOR_WEIGHT
-from tools.preprocessor import (
-    PREPROCESS_DIR,
-    WORKFLOW_IDS,
-    WORKFLOW_FALLBACK_KEYWORDS,
-    _identifier_tokens,
-    _choose_embedding_model,
-    load_bm25_bundle,
-    load_callgraph,
+from config import (
+    BM25_WEIGHT,
+    PREPROCESS_PATH,
+    VECTOR_WEIGHT,
 )
+from tools.preprocessor import tokenize_source
+
+logger = logging.getLogger(__name__)
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Lightweight document wrapper (avoids hard dep on langchain Document)
+# ────────────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class SearchResult:
+    """Minimal document returned by search tools."""
+
+    content: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+    score: float = 0.0
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Index loaders (lazy, cached per client)
+# ────────────────────────────────────────────────────────────────────────
+
+_bm25_cache: dict[str, dict] = {}
+_callgraph_cache: dict[str, dict] = {}
+
+
+def _load_bm25(client_name: str) -> dict | None:
+    if client_name in _bm25_cache:
+        return _bm25_cache[client_name]
+    path = PREPROCESS_PATH / f"{client_name}_bm25.pkl"
+    if not path.exists():
+        logger.warning("BM25 index not found: %s", path)
+        return None
+    # Safe to use pickle.load here: the BM25 index is only written by our own
+    # preprocessing pipeline (_build_bm25_index) and never from external sources.
+    with open(path, "rb") as f:
+        data = pickle.load(f)  # noqa: S301
+    _bm25_cache[client_name] = data
+    return data
+
+
+def _load_callgraph(client_name: str) -> dict | None:
+    if client_name in _callgraph_cache:
+        return _callgraph_cache[client_name]
+    path = PREPROCESS_PATH / f"{client_name}_callgraph.json"
+    if not path.exists():
+        logger.warning("Call-graph not found: %s", path)
+        return None
+    with open(path) as f:
+        data = json.load(f)
+    _callgraph_cache[client_name] = data
+    return data
 
 
 def _load_chroma(client_name: str):
-    Chroma = importlib.import_module("langchain_chroma").Chroma
-
-    persist_dir = PREPROCESS_DIR / f"{client_name}_chroma"
-    if not persist_dir.exists():
-        raise FileNotFoundError(
-            f"Missing Chroma artifacts for {client_name}. Run preprocessing first."
-        )
-
-    embeddings = _choose_embedding_model()
+    """Load a Chroma collection for *client_name*."""
+    try:
+        try:
+            from langchain_huggingface import HuggingFaceEmbeddings
+        except ImportError:
+            from langchain_community.embeddings import HuggingFaceEmbeddings
+        from langchain_chroma import Chroma
+    except ImportError:
+        logger.warning("Chroma/langchain deps not available")
+        return None
+    persist_dir = str(PREPROCESS_PATH / f"{client_name}_chroma")
+    if not Path(persist_dir).exists():
+        logger.warning("Chroma dir not found: %s", persist_dir)
+        return None
+    embedding = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     return Chroma(
         collection_name=client_name,
-        embedding_function=embeddings,
-        persist_directory=str(persist_dir),
+        persist_directory=persist_dir,
+        embedding_function=embedding,
     )
 
 
-def _bm25_search(client_name: str, query: str, top_k: int) -> list[Document]:
-    bundle = load_bm25_bundle(client_name)
-    bm25 = bundle["bm25"]
-    docs = bundle["documents"]
-
-    query_tokens = _identifier_tokens(query)
-    scores = bm25.get_scores(query_tokens)
-
-    ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)[:top_k]
-    out: list[Document] = []
-    for idx, score in ranked:
-        item = docs[idx]
-        md = dict(item["metadata"])
-        md["_bm25_score"] = float(score)
-        out.append(Document(page_content=item["page_content"], metadata=md))
-    return out
+# ────────────────────────────────────────────────────────────────────────
+# BM25 search helper
+# ────────────────────────────────────────────────────────────────────────
 
 
-def _vector_search(client_name: str, query: str, top_k: int) -> list[Document]:
-    vectordb = _load_chroma(client_name)
-    docs = vectordb.similarity_search(query, k=top_k)
-
-    out: list[Document] = []
-    for rank, doc in enumerate(docs, start=1):
-        doc.metadata = dict(doc.metadata)
-        doc.metadata["_vector_score"] = 1.0 / (50 + rank)
-        out.append(doc)
-    return out
-
-
-def _hybrid_fuse(
-    bm25_docs: list[Document],
-    vector_docs: list[Document],
-    top_k: int,
-    bm25_weight: float,
-    vector_weight: float,
-) -> list[Document]:
-    # Weighted reciprocal-rank style fusion with deterministic dedupe.
-    bucket: dict[str, dict[str, Any]] = {}
-
-    def key_of(d: Document) -> str:
-        md = d.metadata
-        return (
-            f"{md.get('client_name','')}|{md.get('file_path','')}|"
-            f"{md.get('function_name','')}|{md.get('start_line','')}|{md.get('end_line','')}"
-        )
-
-    for rank, doc in enumerate(bm25_docs, start=1):
-        k = key_of(doc)
-        entry = bucket.setdefault(k, {"doc": doc, "score": 0.0})
-        entry["score"] += bm25_weight * (1.0 / (50 + rank))
-
-    for rank, doc in enumerate(vector_docs, start=1):
-        k = key_of(doc)
-        entry = bucket.setdefault(k, {"doc": doc, "score": 0.0})
-        entry["score"] += vector_weight * (1.0 / (50 + rank))
-
-    ranked = sorted(bucket.values(), key=lambda x: x["score"], reverse=True)[:top_k]
-    out: list[Document] = []
-    for item in ranked:
-        doc = item["doc"]
-        md = dict(doc.metadata)
-        md["_hybrid_score"] = float(item["score"])
-        doc.metadata = md
-        out.append(doc)
-    return out
-
-
-def _hybrid_with_ensemble(
-    client_name: str,
+def _bm25_search(
     query: str,
-    top_k: int,
-    allowed_nodes: set[str] | None = None,
-) -> list[Document]:
-    """Preferred hybrid retrieval implementation using EnsembleRetriever.
-
-    Falls back to manual fusion if optional retriever packages are unavailable.
-    """
-
-    try:
-        EnsembleRetriever = importlib.import_module("langchain.retrievers").EnsembleRetriever
-        BM25Retriever = importlib.import_module("langchain_community.retrievers").BM25Retriever
-
-        bundle = load_bm25_bundle(client_name)
-        bm25_docs = [
-            Document(page_content=item["page_content"], metadata=dict(item["metadata"]))
-            for item in bundle["documents"]
-        ]
-        if allowed_nodes is not None:
-            bm25_docs = _filter_docs_by_nodes(bm25_docs, allowed_nodes)
-
-        bm25_retriever = BM25Retriever.from_documents(bm25_docs)
-        bm25_retriever.k = top_k
-
-        vectordb = _load_chroma(client_name)
-        vector_retriever = vectordb.as_retriever(search_kwargs={"k": max(top_k * 4, top_k)})
-
-        bm25_w, vector_w = BM25_VECTOR_WEIGHT
-        ensemble = EnsembleRetriever(
-            retrievers=[bm25_retriever, vector_retriever],
-            weights=[bm25_w, vector_w],
-        )
-
-        docs = ensemble.invoke(query)
-        if allowed_nodes is not None:
-            docs = _filter_docs_by_nodes(docs, allowed_nodes)
-        return docs[:top_k]
-    except Exception:
-        # Manual fallback path still keeps BM25 + Vector weighted fusion.
-        candidate_k = max(top_k * 4, top_k)
-        bm25_docs = _bm25_search(client_name, query, top_k=candidate_k)
-        vector_docs = _vector_search(client_name, query, top_k=candidate_k)
-
-        if allowed_nodes is not None:
-            bm25_docs = _filter_docs_by_nodes(bm25_docs, allowed_nodes)
-            vector_docs = _filter_docs_by_nodes(vector_docs, allowed_nodes)
-
-        bm25_w, vector_w = BM25_VECTOR_WEIGHT
-        fused = _hybrid_fuse(
-            bm25_docs=bm25_docs,
-            vector_docs=vector_docs,
-            top_k=top_k,
-            bm25_weight=bm25_w,
-            vector_weight=vector_w,
-        )
-        return fused
-
-
-def _ensure_preprocessed(client_name: str) -> None:
-    required = [
-        PREPROCESS_DIR / f"{client_name}_symbols.json",
-        PREPROCESS_DIR / f"{client_name}_callgraph.json",
-        PREPROCESS_DIR / f"{client_name}_bm25.pkl",
-        PREPROCESS_DIR / f"{client_name}_chroma",
-    ]
-    missing = [str(p) for p in required if not p.exists()]
-    if missing:
-        raise FileNotFoundError(
-            f"Preprocessing artifacts missing for {client_name}: {missing}. "
-            "Run run_preprocessing(client_name) first."
-        )
-
-
-@tool
-def search_codebase(query: str, client_name: str, top_k: int = 5) -> list[Document]:
-    """Hybrid Search for Phase 1 vocabulary discovery.
-
-    1. BM25 retrieval from identifier-tokenized corpus
-    2. Vector similarity retrieval from persistent Chroma index
-    3. Weighted fusion (BM25:Vector = 4:6 by default)
-
-    Returns Documents with evidence metadata fields.
-    """
-
-    if top_k <= 0:
+    client_name: str,
+    top_k: int = 5,
+    allowed_functions: set[str] | None = None,
+) -> list[SearchResult]:
+    """Search the BM25 index and return top_k results."""
+    bm25_data = _load_bm25(client_name)
+    if bm25_data is None:
         return []
 
-    _ensure_preprocessed(client_name)
+    bm25 = bm25_data["bm25"]
+    metadata_list: list[dict] = bm25_data["metadata"]
 
-    return _hybrid_with_ensemble(client_name=client_name, query=query, top_k=top_k)
+    query_tokens = tokenize_source(query)
+    scores = bm25.get_scores(query_tokens)
 
+    indexed: list[tuple[int, float]] = list(enumerate(scores))
 
-def _call_depth_from_entries(
-    nodes: list[str],
-    edges: list[tuple[str, str]],
-    entries: list[str],
-) -> dict[str, int]:
-    adj: dict[str, list[str]] = {}
-    for caller, callee in edges:
-        adj.setdefault(caller, []).append(callee)
+    if allowed_functions is not None:
+        indexed = [
+            (i, s) for i, s in indexed
+            if metadata_list[i].get("qualified_name") in allowed_functions
+            or metadata_list[i].get("function_name") in allowed_functions
+        ]
 
-    depth = {n: 999 for n in nodes}
-    dq = deque()
-
-    for ep in entries:
-        if ep in depth:
-            depth[ep] = 0
-            dq.append(ep)
-
-    while dq:
-        cur = dq.popleft()
-        for nxt in adj.get(cur, []):
-            if depth[nxt] > depth[cur] + 1:
-                depth[nxt] = depth[cur] + 1
-                dq.append(nxt)
-
-    return depth
+    indexed.sort(key=lambda x: x[1], reverse=True)
+    results: list[SearchResult] = []
+    for i, score in indexed[:top_k]:
+        meta = metadata_list[i]
+        results.append(SearchResult(
+            content=meta.get("source_code", ""),
+            metadata=meta,
+            score=float(score),
+        ))
+    return results
 
 
-def _filter_docs_by_nodes(docs: list[Document], allowed_nodes: set[str]) -> list[Document]:
-    filtered = []
-    for doc in docs:
-        qn = doc.metadata.get("qualified_name")
-        if qn in allowed_nodes:
-            filtered.append(doc)
-    return filtered
+# ────────────────────────────────────────────────────────────────────────
+# Vector search helper
+# ────────────────────────────────────────────────────────────────────────
 
 
-@tool
+def _vector_search(
+    query: str,
+    client_name: str,
+    top_k: int = 5,
+    filter_dict: dict | None = None,
+) -> list[SearchResult]:
+    """Search Chroma vector store and return top_k results."""
+    db = _load_chroma(client_name)
+    if db is None:
+        return []
+
+    try:
+        results = db.similarity_search_with_relevance_scores(
+            query,
+            k=top_k,
+            filter=filter_dict,
+        )
+    except Exception:
+        logger.debug("Vector search failed for %s", client_name, exc_info=True)
+        return []
+
+    out: list[SearchResult] = []
+    for doc, score in results:
+        out.append(SearchResult(
+            content=doc.page_content,
+            metadata=doc.metadata,
+            score=float(score),
+        ))
+    return out
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Mode A — semantic hybrid search (Phase 1)
+# ────────────────────────────────────────────────────────────────────────
+
+
+def search_codebase(
+    query: str,
+    client_name: str,
+    top_k: int = 5,
+) -> list[SearchResult]:
+    """Execute hybrid search (BM25 + vector) with weighted fusion.
+
+    Parameters
+    ----------
+    query : str
+        Natural-language or keyword query.
+    client_name : str
+        Which client's index to search.
+    top_k : int
+        Number of results to return after fusion.
+
+    Returns
+    -------
+    list[SearchResult]
+    """
+    bm25_results = _bm25_search(query, client_name, top_k=top_k)
+    vector_results = _vector_search(query, client_name, top_k=top_k)
+
+    return _fuse_results(bm25_results, vector_results, top_k)
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Mode B — call-graph directed hybrid search (Phase 2)
+# ────────────────────────────────────────────────────────────────────────
+
+
 def search_codebase_by_workflow(
     workflow_id: str,
     query: str,
     client_name: str,
     max_call_depth: int = 5,
     top_k: int = 10,
-) -> list[Document]:
-    """Callgraph-guided hybrid retrieval for Phase 2 LSG extraction.
+) -> list[SearchResult]:
+    """Call-graph directed hybrid search for LSG extraction.
 
-    Steps:
-    1. Get workflow entry points from callgraph
-    2. BFS callgraph to collect nodes with call_depth <= max_call_depth
-    3. Run hybrid retrieval (BM25 + vector)
-    4. Keep only docs in callgraph subgraph and sort by call_depth asc
+    1. From callgraph, get entry_points for *workflow_id*.
+    2. BFS up to *max_call_depth*, collecting reachable function names.
+    3. Search within that function set using hybrid retrieval.
+    4. Sort results by call_depth ascending (closest to entry first).
     """
+    cg = _load_callgraph(client_name)
+    if cg is None:
+        logger.warning("No callgraph for %s — falling back to full search", client_name)
+        return search_codebase(query, client_name, top_k)
 
-    if workflow_id not in WORKFLOW_IDS:
-        raise ValueError(f"Unsupported workflow_id: {workflow_id}")
-    if top_k <= 0:
-        return []
+    entry_fns: list[str] = cg.get("entry_points", {}).get(workflow_id, [])
+    if not entry_fns:
+        logger.info("No entry points for %s/%s — full search fallback", client_name, workflow_id)
+        return search_codebase(query, client_name, top_k)
 
-    _ensure_preprocessed(client_name)
+    # Build adjacency
+    adjacency: dict[str, list[str]] = defaultdict(list)
+    for edge in cg.get("edges", []):
+        adjacency[edge["caller"]].append(edge["callee"])
 
-    cg = load_callgraph(client_name)
-    entry_points = cg.entry_points.get(workflow_id, [])
+    # BFS
+    reachable: set[str] = set()
+    queue: deque[tuple[str, int]] = deque()
+    for ep in entry_fns:
+        queue.append((ep, 0))
+        reachable.add(ep)
 
-    if not entry_points:
-        broad = WORKFLOW_FALLBACK_KEYWORDS.get(workflow_id, [])
-        for node in cg.nodes:
-            normalized = "".join(ch for ch in node.lower() if ch.isalnum())
-            hits = sum(1 for k in broad if k in normalized)
-            if hits >= 2:
-                entry_points.append(node)
-        entry_points = entry_points[:50]
+    while queue:
+        node, depth = queue.popleft()
+        if depth >= max_call_depth:
+            continue
+        for callee in adjacency.get(node, []):
+            if callee not in reachable:
+                reachable.add(callee)
+                queue.append((callee, depth + 1))
 
-    edges = [(e.caller, e.callee) for e in cg.edges]
-    depth_map = _call_depth_from_entries(cg.nodes, edges, entry_points)
+    # Search within reachable set
+    bm25_results = _bm25_search(query, client_name, top_k=top_k, allowed_functions=reachable)
+    vector_results = _vector_search(query, client_name, top_k=top_k)
 
-    allowed = {node for node, d in depth_map.items() if d <= max_call_depth}
-    if not allowed:
-        allowed = set(cg.nodes)
+    # Filter vector results to reachable set
+    filtered_vector: list[SearchResult] = []
+    for r in vector_results:
+        qn = r.metadata.get("qualified_name", "")
+        fn = r.metadata.get("function_name", "")
+        if qn in reachable or fn in reachable:
+            filtered_vector.append(r)
 
-    fused = _hybrid_with_ensemble(
-        client_name=client_name,
-        query=query,
-        top_k=max(top_k * 2, top_k),
-        allowed_nodes=allowed,
-    )
+    fused = _fuse_results(bm25_results, filtered_vector, top_k)
 
-    # Enrich + sort by call depth ascending.
-    for doc in fused:
-        qn = doc.metadata.get("qualified_name")
-        d = depth_map.get(qn, 999)
-        hints = [workflow_id] if d != 999 else []
-        md = dict(doc.metadata)
-        md["call_depth"] = d
-        md["workflow_hints"] = hints
-        doc.metadata = md
+    # Sort by call_depth ascending
+    fused.sort(key=lambda r: r.metadata.get("call_depth", 999))
+    return fused
 
-    fused.sort(key=lambda d: (d.metadata.get("call_depth", 999), -d.metadata.get("_hybrid_score", 0)))
-    return fused[:top_k]
+
+# ────────────────────────────────────────────────────────────────────────
+# Fusion helper
+# ────────────────────────────────────────────────────────────────────────
+
+
+def _fuse_results(
+    bm25_results: list[SearchResult],
+    vector_results: list[SearchResult],
+    top_k: int,
+) -> list[SearchResult]:
+    """Weighted reciprocal-rank fusion of BM25 and vector results."""
+    score_map: dict[str, float] = {}
+    doc_map: dict[str, SearchResult] = {}
+
+    def _key(r: SearchResult) -> str:
+        return f"{r.metadata.get('qualified_name', '')}:{r.metadata.get('start_line', 0)}"
+
+    for rank, r in enumerate(bm25_results):
+        k = _key(r)
+        rr_score = 1.0 / (rank + 1)
+        score_map[k] = score_map.get(k, 0.0) + BM25_WEIGHT * rr_score
+        doc_map[k] = r
+
+    for rank, r in enumerate(vector_results):
+        k = _key(r)
+        rr_score = 1.0 / (rank + 1)
+        score_map[k] = score_map.get(k, 0.0) + VECTOR_WEIGHT * rr_score
+        if k not in doc_map:
+            doc_map[k] = r
+
+    sorted_keys = sorted(score_map, key=lambda k: score_map[k], reverse=True)
+    results: list[SearchResult] = []
+    for k in sorted_keys[:top_k]:
+        doc = doc_map[k]
+        doc.score = score_map[k]
+        results.append(doc)
+    return results

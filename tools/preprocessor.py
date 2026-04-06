@@ -1,767 +1,584 @@
-"""Offline preprocessing pipeline for EthAuditor.
+"""EthAuditor — Offline preprocessing pipeline.
 
-Implements:
-- AST symbol extraction (tree-sitter)
-- callgraph construction + workflow entry point inference
-- vector index building (Chroma persistent collections)
-- BM25 index building (identifier tokenization)
+Implements 4 tasks:
+  A. AST symbol extraction (tree-sitter)
+  B. Call-graph construction
+  C. Enhanced vector index (Chroma)
+  D. BM25 exact-match index
 """
 
 from __future__ import annotations
 
-from collections import defaultdict, deque
-from dataclasses import asdict, dataclass
-import importlib
 import json
+import logging
 import os
-from pathlib import Path
 import pickle
 import re
-import shutil
-from typing import Any, Iterable
-from functools import lru_cache
+from collections import defaultdict, deque
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any
 
-from config import CLIENT_NAMES, ENTRY_POINT_OVERRIDES, PREPROCESS_PATH, WORKFLOW_IDS
+from config import (
+    CLIENT_NAMES,
+    CODE_BASE_PATH,
+    ENTRY_POINT_KEYWORDS,
+    ENTRY_POINT_OVERRIDES,
+    LANGUAGE_GRAMMARS,
+    PREPROCESS_PATH,
+    WORKFLOW_IDS,
+)
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-CODE_DIR = ROOT_DIR / "code"
-PREPROCESS_DIR = ROOT_DIR / PREPROCESS_PATH.replace("./", "")
+logger = logging.getLogger(__name__)
 
-
-LANGUAGE_GRAMMARS: dict[str, tuple[str, str]] = {
-    "prysm": ("go", "tree-sitter-go"),
-    "lighthouse": ("rust", "tree-sitter-rust"),
-    "grandine": ("rust", "tree-sitter-rust"),
-    "teku": ("java", "tree-sitter-java"),
-    "lodestar": ("typescript", "tree-sitter-typescript"),
-}
-
-LANGUAGE_FILE_EXTS: dict[str, tuple[str, ...]] = {
-    "go": (".go",),
-    "rust": (".rs",),
-    "java": (".java",),
-    "typescript": (".ts", ".tsx", ".js", ".mjs", ".cjs"),
-}
-
-LANGUAGE_FUNCTION_NODES: dict[str, tuple[str, ...]] = {
-    "go": ("function_declaration", "method_declaration"),
-    "rust": ("function_item",),
-    "java": ("method_declaration",),
-    "typescript": ("function_declaration", "method_definition"),
-}
-
-LANGUAGE_CALL_NODES: dict[str, tuple[str, ...]] = {
-    "go": ("call_expression",),
-    "rust": ("call_expression", "method_call_expression"),
-    "java": ("method_invocation",),
-    "typescript": ("call_expression",),
-}
-
-WORKFLOW_KEYWORDS: dict[str, list[str]] = {
-    "initial_sync": ["initialsync", "runinitial", "startinitial"],
-    "regular_sync": ["regularsync", "runregular", "gossipsync"],
-    "checkpoint_sync": ["checkpointsync", "runcheckpoint"],
-    "block_generate": ["proposeblock", "buildblock", "produceblock"],
-    "attestation_generate": ["submitattestation", "createattestation"],
-    "aggregate": ["aggregate", "computeaggregate"],
-    "execute_layer_relation": ["engineapi", "executionengine", "forkchoiceupdate"],
-}
-
-WORKFLOW_FALLBACK_KEYWORDS: dict[str, list[str]] = {
-    "initial_sync": ["initial", "sync", "start", "run"],
-    "regular_sync": ["regular", "sync", "gossip", "run"],
-    "checkpoint_sync": ["checkpoint", "sync"],
-    "block_generate": ["block", "propose", "build", "produce"],
-    "attestation_generate": ["attestation", "attest", "submit", "create"],
-    "aggregate": ["aggregate", "committee"],
-    "execute_layer_relation": ["engine", "execution", "forkchoice", "el"],
-}
+# Maximum recursion depth for AST traversal
+MAX_AST_RECURSION_DEPTH: int = 100
 
 
-@dataclass(slots=True)
+# ────────────────────────────────────────────────────────────────────────
+# Data classes
+# ────────────────────────────────────────────────────────────────────────
+
+
+@dataclass
 class SymbolInfo:
-    file_path: str
+    """Information about a single function / method extracted via AST."""
+
+    file: str
     function_name: str
     qualified_name: str
     start_line: int
     end_line: int
-    source_code: str
-    calls: list[str]
-    called_by: list[str]
+    source_code: str = ""
+    calls: list[str] = field(default_factory=list)
+    called_by: list[str] = field(default_factory=list)
 
 
-@dataclass(slots=True)
-class CallEdge:
-    caller: str
-    callee: str
-
-
-@dataclass(slots=True)
+@dataclass
 class CallGraph:
-    nodes: list[str]
-    edges: list[CallEdge]
-    entry_points: dict[str, list[str]]
+    """Directed call-graph with workflow entry-point annotations."""
+
+    nodes: list[str] = field(default_factory=list)
+    edges: list[dict[str, str]] = field(default_factory=list)
+    entry_points: dict[str, list[str]] = field(default_factory=dict)
 
 
-def _ensure_dependencies() -> None:
+# ────────────────────────────────────────────────────────────────────────
+# Tokenization helpers
+# ────────────────────────────────────────────────────────────────────────
+
+_CAMEL_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+_SNAKE_RE = re.compile(r"_+")
+
+
+def tokenize_identifier(name: str) -> list[str]:
+    """Split an identifier into sub-tokens.
+
+    Examples
+    --------
+    >>> tokenize_identifier("runInitialSync")
+    ['runInitialSync', 'run', 'Initial', 'Sync']
+    >>> tokenize_identifier("process_chain_segment")
+    ['process_chain_segment', 'process', 'chain', 'segment']
+    """
+    tokens: list[str] = [name]
+    # camelCase
+    parts = _CAMEL_RE.sub("_", name).split("_")
+    parts = [p for p in parts if p]
+    if len(parts) > 1:
+        tokens.extend(parts)
+    else:
+        snake_parts = _SNAKE_RE.split(name)
+        snake_parts = [p for p in snake_parts if p]
+        if len(snake_parts) > 1:
+            tokens.extend(snake_parts)
+    return tokens
+
+
+def tokenize_source(source: str) -> list[str]:
+    """Tokenize source code into identifier-level tokens for BM25."""
+    raw_tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", source)
+    result: list[str] = []
+    for tok in raw_tokens:
+        result.extend(tokenize_identifier(tok))
+    return result
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Task A — AST symbol extraction
+# ────────────────────────────────────────────────────────────────────────
+
+# AST node-type mapping per language
+_AST_CONFIG: dict[str, dict[str, Any]] = {
+    "go": {
+        "func_types": ["function_declaration", "method_declaration"],
+        "call_types": ["call_expression"],
+        "name_field": "name",
+        "extensions": [".go"],
+    },
+    "rust": {
+        "func_types": ["function_item"],
+        "call_types": ["call_expression", "macro_invocation"],
+        "name_field": "name",
+        "extensions": [".rs"],
+    },
+    "java": {
+        "func_types": ["method_declaration"],
+        "call_types": ["method_invocation"],
+        "name_field": "name",
+        "extensions": [".java"],
+    },
+    "typescript": {
+        "func_types": ["function_declaration", "method_definition"],
+        "call_types": ["call_expression"],
+        "name_field": "name",
+        "extensions": [".ts", ".tsx", ".js", ".jsx"],
+    },
+}
+
+
+def _get_parser(language: str):
+    """Return a tree-sitter Parser configured for *language*."""
     try:
-        importlib.import_module("tree_sitter")
-        importlib.import_module("rank_bm25")
-    except Exception as exc:  # pragma: no cover - dependency guard
-        raise RuntimeError(
-            "Missing preprocessing dependencies. Install at least: tree-sitter, rank-bm25"
-        ) from exc
+        import tree_sitter_go
+        import tree_sitter_java
+        import tree_sitter_rust
+        import tree_sitter_typescript
+        from tree_sitter import Language, Parser
+
+        lang_map = {
+            "go": Language(tree_sitter_go.language()),
+            "rust": Language(tree_sitter_rust.language()),
+            "java": Language(tree_sitter_java.language()),
+            "typescript": Language(tree_sitter_typescript.language_typescript()),
+        }
+        parser = Parser(lang_map[language])
+        return parser, lang_map[language]
+    except ImportError:
+        logger.warning("tree-sitter bindings not available; returning None")
+        return None, None
 
 
-def _get_language_and_parser(language_name: str):
-    tree_sitter_mod = importlib.import_module("tree_sitter")
-    Language = tree_sitter_mod.Language
-    Parser = tree_sitter_mod.Parser
-
-    parser = Parser()
-
-    # Prefer dedicated grammar packages.
-    if language_name == "go":
-        tree_sitter_go = importlib.import_module("tree_sitter_go")
-
-        language = Language(tree_sitter_go.language())
-    elif language_name == "rust":
-        tree_sitter_rust = importlib.import_module("tree_sitter_rust")
-
-        language = Language(tree_sitter_rust.language())
-    elif language_name == "java":
-        tree_sitter_java = importlib.import_module("tree_sitter_java")
-
-        language = Language(tree_sitter_java.language())
-    elif language_name == "typescript":
-        tree_sitter_typescript = importlib.import_module("tree_sitter_typescript")
-
-        language = Language(tree_sitter_typescript.language_typescript())
-    else:  # pragma: no cover - protected by caller mapping
-        raise ValueError(f"Unsupported language: {language_name}")
-
-    parser.language = language
-    return language, parser
+def _find_name_node(node, name_field: str):
+    """Extract the name of a function/method node via tree-sitter field API."""
+    # Use child_by_field_name (looks up by grammar field, e.g. "name")
+    # instead of matching child.type which would be "identifier" / "field_identifier".
+    child = node.child_by_field_name(name_field)
+    if child is not None:
+        return child.text.decode("utf-8") if child.text else ""
+    return ""
 
 
-def _client_code_dir(client_name: str) -> Path:
-    if client_name not in CLIENT_NAMES:
-        raise ValueError(f"Unsupported client_name: {client_name}")
-    return CODE_DIR / client_name
+def _extract_calls(node, call_types: list[str], depth: int = 0) -> list[str]:
+    """Walk the AST to collect callee names from call expressions."""
+    calls: list[str] = []
+    if depth > MAX_AST_RECURSION_DEPTH:
+        return calls
+    if node.type in call_types:
+        # Try to get function name from first named child
+        func_node = node.child_by_field_name("function") or (
+            node.children[0] if node.children else None
+        )
+        if func_node is not None:
+            name = func_node.text.decode("utf-8") if func_node.text else ""
+            # Take last segment for qualified calls (e.g., "pkg.Func" → "Func")
+            short = name.rsplit(".", 1)[-1] if name else ""
+            if short:
+                calls.append(short)
+    for child in node.children:
+        calls.extend(_extract_calls(child, call_types, depth + 1))
+    return calls
 
 
-def _iter_source_files(client_name: str, language_name: str) -> Iterable[Path]:
-    base = _client_code_dir(client_name)
-    exts = LANGUAGE_FILE_EXTS[language_name]
-    max_files_raw = os.getenv("ETHAUDITOR_MAX_SOURCE_FILES", "").strip()
-    max_files = int(max_files_raw) if max_files_raw.isdigit() else None
-    seen = 0
+def _walk_functions(node, func_types: list[str], name_field: str, call_types: list[str],
+                    source_bytes: bytes, file_path: str) -> list[SymbolInfo]:
+    """Recursively extract functions from the AST."""
+    results: list[SymbolInfo] = []
+    if node.type in func_types:
+        fn_name = _find_name_node(node, name_field) or "<anonymous>"
+        start = node.start_point[0] + 1  # 1-based
+        end = node.end_point[0] + 1
+        body = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+        calls = _extract_calls(node, call_types)
 
-    for path in base.rglob("*"):
-        if path.is_file() and path.suffix.lower() in exts:
-            if max_files is not None and seen >= max_files:
-                break
-            seen += 1
-            yield path
+        # Build qualified name: for Go methods, prepend receiver
+        qualified = fn_name
+        if node.type == "method_declaration":
+            receiver = node.child_by_field_name("receiver")
+            if receiver is not None:
+                receiver_text = receiver.text.decode("utf-8", errors="replace")
+                qualified = f"({receiver_text}).{fn_name}"
 
-
-def _node_text(node, source: bytes) -> str:
-    return source[node.start_byte : node.end_byte].decode("utf-8", errors="ignore")
-
-
-def _find_first_identifier(node, source: bytes) -> str:
-    queue = deque([node])
-    while queue:
-        cur = queue.popleft()
-        if cur.type == "identifier":
-            text = _node_text(cur, source).strip()
-            if text:
-                return text
-        for child in cur.children:
-            queue.append(child)
-    return "anonymous"
-
-
-def _extract_call_name(call_node, source: bytes, language_name: str) -> str | None:
-    text = _node_text(call_node, source).strip()
-    if not text:
-        return None
-
-    if language_name == "java":
-        m = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(", text)
-        return m.group(1) if m else None
-
-    m = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(", text)
-    if m:
-        return m.group(1)
-
-    if language_name == "rust":
-        m2 = re.search(r"\.([A-Za-z_][A-Za-z0-9_]*)\s*\(", text)
-        if m2:
-            return m2.group(1)
-
-    return None
-
-
-def _collect_calls(func_node, source: bytes, language_name: str) -> list[str]:
-    call_types = set(LANGUAGE_CALL_NODES[language_name])
-    out: list[str] = []
-    queue = deque([func_node])
-
-    while queue:
-        cur = queue.popleft()
-        if cur.type in call_types:
-            call_name = _extract_call_name(cur, source, language_name)
-            if call_name:
-                out.append(call_name)
-        for child in cur.children:
-            queue.append(child)
-
-    # Preserve order + dedupe.
-    seen = set()
-    unique: list[str] = []
-    for name in out:
-        if name not in seen:
-            seen.add(name)
-            unique.append(name)
-    return unique
-
-
-def _to_relative(path: Path) -> str:
-    return str(path.relative_to(ROOT_DIR))
-
-
-def _extract_receiver_name(func_node, source: bytes, language_name: str) -> str | None:
-    if language_name not in {"go", "typescript", "java"}:
-        return None
-
-    text = _node_text(func_node, source)
-
-    if language_name == "go":
-        # e.g. func (s *Service) runInitialSync(...)
-        m = re.search(r"func\s*\(([^)]*)\)", text)
-        if not m:
-            return None
-        receiver_block = m.group(1)
-        rm = re.search(r"\*?([A-Za-z_][A-Za-z0-9_]*)\s*$", receiver_block.strip())
-        return rm.group(1) if rm else None
-
-    if language_name == "typescript":
-        # best-effort class receiver from declaration context
-        parent = func_node.parent
-        while parent is not None:
-            if parent.type == "class_declaration":
-                class_name = _find_first_identifier(parent, source)
-                return class_name
-            parent = parent.parent
-        return None
-
-    if language_name == "java":
-        parent = func_node.parent
-        while parent is not None:
-            if parent.type in {"class_declaration", "interface_declaration"}:
-                class_name = _find_first_identifier(parent, source)
-                return class_name
-            parent = parent.parent
-        return None
-
-    return None
-
-
-def _build_qualified_name(
-    function_name: str,
-    receiver_name: str | None,
-    language_name: str,
-) -> str:
-    if receiver_name:
-        if language_name == "go":
-            return f"(*{receiver_name}).{function_name}"
-        return f"{receiver_name}.{function_name}"
-    return function_name
+        results.append(SymbolInfo(
+            file=file_path,
+            function_name=fn_name,
+            qualified_name=qualified,
+            start_line=start,
+            end_line=end,
+            source_code=body,
+            calls=list(set(calls)),
+        ))
+    for child in node.children:
+        results.extend(_walk_functions(child, func_types, name_field, call_types, source_bytes, file_path))
+    return results
 
 
 def _extract_symbols(client_name: str) -> list[SymbolInfo]:
-    """Extract symbols with tree-sitter and persist to preprocess artifacts.
+    """Task A: Extract function symbols from client source code using tree-sitter."""
+    lang_key, _grammar = LANGUAGE_GRAMMARS[client_name]
+    ast_cfg = _AST_CONFIG[lang_key]
+    code_dir = CODE_BASE_PATH / client_name
 
-    Output: ./output/preprocess/<client>_symbols.json
-    """
+    if not code_dir.exists():
+        logger.warning("Source directory %s does not exist — skipping AST extraction", code_dir)
+        return []
 
-    language_name, _grammar_pkg = LANGUAGE_GRAMMARS[client_name]
-    _language, parser = _get_language_and_parser(language_name)
+    parser, _lang_obj = _get_parser(lang_key)
+    if parser is None:
+        logger.warning("tree-sitter parser unavailable for %s — returning empty symbols", lang_key)
+        return []
 
     symbols: list[SymbolInfo] = []
+    extensions = ast_cfg["extensions"]
 
-    function_nodes = set(LANGUAGE_FUNCTION_NODES[language_name])
-
-    for source_file in _iter_source_files(client_name, language_name):
-        source = source_file.read_bytes()
-        tree = parser.parse(source)
-        root = tree.root_node
-
-        queue = deque([root])
-        while queue:
-            node = queue.popleft()
-            if node.type in function_nodes:
-                function_name = _find_first_identifier(node, source)
-                receiver_name = _extract_receiver_name(node, source, language_name)
-                qualified_name = _build_qualified_name(function_name, receiver_name, language_name)
-
-                start_line = node.start_point[0] + 1
-                end_line = node.end_point[0] + 1
-                source_code = _node_text(node, source)
-                calls = _collect_calls(node, source, language_name)
-
-                symbols.append(
-                    SymbolInfo(
-                        file_path=_to_relative(source_file),
-                        function_name=function_name,
-                        qualified_name=qualified_name,
-                        start_line=start_line,
-                        end_line=end_line,
-                        source_code=source_code,
-                        calls=calls,
-                        called_by=[],
-                    )
+    for root, _dirs, files in os.walk(code_dir):
+        for fname in files:
+            if not any(fname.endswith(ext) for ext in extensions):
+                continue
+            full_path = Path(root) / fname
+            rel_path = str(full_path.relative_to(CODE_BASE_PATH / client_name))
+            try:
+                source = full_path.read_bytes()
+                tree = parser.parse(source)
+                file_symbols = _walk_functions(
+                    tree.root_node,
+                    ast_cfg["func_types"],
+                    ast_cfg["name_field"],
+                    ast_cfg["call_types"],
+                    source,
+                    rel_path,
                 )
-            for child in node.children:
-                queue.append(child)
+                symbols.extend(file_symbols)
+            except Exception:
+                logger.debug("Failed to parse %s", full_path, exc_info=True)
 
-    # Fill called_by reverse edges using short-name matching.
-    by_short: dict[str, list[str]] = defaultdict(list)
-    for s in symbols:
-        by_short[s.function_name].append(s.qualified_name)
-
-    called_by_map: dict[str, set[str]] = defaultdict(set)
-    for s in symbols:
-        for callee in s.calls:
-            targets = by_short.get(callee, [])
-            for target in targets:
-                called_by_map[target].add(s.qualified_name)
-
-    for i, s in enumerate(symbols):
-        symbols[i].called_by = sorted(called_by_map.get(s.qualified_name, set()))
-
-    PREPROCESS_DIR.mkdir(parents=True, exist_ok=True)
-    symbols_path = PREPROCESS_DIR / f"{client_name}_symbols.json"
-    symbols_path.write_text(
-        json.dumps([asdict(s) for s in symbols], ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
+    logger.info("[_extract_symbols] client=%s symbols=%d", client_name, len(symbols))
     return symbols
 
 
-def _normalized_for_match(name: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", name.lower())
-
-
-def _infer_entry_points(symbols: list[SymbolInfo], client_name: str) -> dict[str, list[str]]:
-    by_workflow: dict[str, list[str]] = {wf: [] for wf in WORKFLOW_IDS}
-
-    for sym in symbols:
-        normalized_q = _normalized_for_match(sym.qualified_name)
-        normalized_fn = _normalized_for_match(sym.function_name)
-
-        for workflow_id, keywords in WORKFLOW_KEYWORDS.items():
-            if any(k in normalized_q or k in normalized_fn for k in keywords):
-                by_workflow[workflow_id].append(sym.qualified_name)
-
-    # Manual overrides from config take precedence and are additive.
-    overrides = ENTRY_POINT_OVERRIDES.get(client_name, {})
-    for workflow_id, values in overrides.items():
-        by_workflow.setdefault(workflow_id, [])
-        by_workflow[workflow_id].extend(values)
-
-    for workflow_id in by_workflow:
-        # stable unique list
-        seen = set()
-        uniq = []
-        for item in by_workflow[workflow_id]:
-            if item not in seen:
-                seen.add(item)
-                uniq.append(item)
-        by_workflow[workflow_id] = uniq
-
-    # Fallback when strict keywords miss due naming variance.
-    for workflow_id, entries in by_workflow.items():
-        if entries:
-            continue
-        broad = WORKFLOW_FALLBACK_KEYWORDS.get(workflow_id, [])
-        for sym in symbols:
-            normalized = _normalized_for_match(sym.qualified_name)
-            hits = sum(1 for k in broad if k in normalized)
-            if hits >= 2:
-                by_workflow[workflow_id].append(sym.qualified_name)
-        # final dedupe
-        seen = set()
-        uniq = []
-        for item in by_workflow[workflow_id]:
-            if item not in seen:
-                seen.add(item)
-                uniq.append(item)
-        by_workflow[workflow_id] = uniq[:50]
-
-    return by_workflow
+# ────────────────────────────────────────────────────────────────────────
+# Task B — Call-graph construction
+# ────────────────────────────────────────────────────────────────────────
 
 
 def _build_callgraph(client_name: str, symbols: list[SymbolInfo]) -> CallGraph:
-    """Build callgraph and persist to preprocess artifacts.
+    """Task B: Build a directed call-graph and identify workflow entry points."""
+    name_to_symbol: dict[str, SymbolInfo] = {}
+    for sym in symbols:
+        name_to_symbol[sym.function_name] = sym
+        name_to_symbol[sym.qualified_name] = sym
 
-    Output: ./output/preprocess/<client>_callgraph.json
-    """
+    nodes_set: set[str] = set()
+    edges: list[dict[str, str]] = []
 
-    by_short: dict[str, list[str]] = defaultdict(list)
-    nodes = []
+    for sym in symbols:
+        nodes_set.add(sym.qualified_name)
+        for callee_short in sym.calls:
+            if callee_short in name_to_symbol:
+                callee_qn = name_to_symbol[callee_short].qualified_name
+                edges.append({"caller": sym.qualified_name, "callee": callee_qn})
+                nodes_set.add(callee_qn)
+                # Back-link
+                name_to_symbol[callee_short].called_by.append(sym.qualified_name)
 
-    for s in symbols:
-        nodes.append(s.qualified_name)
-        by_short[s.function_name].append(s.qualified_name)
+    # ── Entry-point detection ───────────────────────────────────────────
+    overrides = ENTRY_POINT_OVERRIDES.get(client_name, {})
+    entry_points: dict[str, list[str]] = {}
 
-    edges: list[CallEdge] = []
-    seen_edges: set[tuple[str, str]] = set()
+    # Prefixes/substrings that indicate test/bench/mock functions — not real entry points
+    _SKIP_PREFIXES = ("test", "fuzz", "mock", "bench", "fake", "stub", "dummy")
+    # File path patterns that indicate test files
+    _TEST_PATH_MARKERS = ("/test", "/tests", "/testing", "_test.", "_test_", "test_", "/spec/")
 
-    for s in symbols:
-        for callee_name in s.calls:
-            for target in by_short.get(callee_name, []):
-                pair = (s.qualified_name, target)
-                if pair in seen_edges:
-                    continue
-                seen_edges.add(pair)
-                edges.append(CallEdge(caller=s.qualified_name, callee=target))
+    def _is_test_symbol(sym: SymbolInfo) -> bool:
+        fn_lower = sym.function_name.lower().replace("_", "")
+        if any(fn_lower.startswith(p) for p in _SKIP_PREFIXES):
+            return True
+        file_lower = sym.file.lower()
+        return any(marker in file_lower for marker in _TEST_PATH_MARKERS)
 
-    entry_points = _infer_entry_points(symbols, client_name)
+    for wf_id in WORKFLOW_IDS:
+        if wf_id in overrides:
+            entry_points[wf_id] = overrides[wf_id]
+            continue
 
-    graph = CallGraph(
-        nodes=sorted(set(nodes)),
+        keywords = ENTRY_POINT_KEYWORDS.get(wf_id, [])
+        matched: list[str] = []
+        for sym in symbols:
+            if _is_test_symbol(sym):
+                continue
+            fn_lower = sym.function_name.lower().replace("_", "")
+            if any(kw in fn_lower for kw in keywords):
+                matched.append(sym.qualified_name)
+        entry_points[wf_id] = matched
+
+    cg = CallGraph(
+        nodes=sorted(nodes_set),
         edges=edges,
         entry_points=entry_points,
     )
-
-    payload = {
-        "nodes": graph.nodes,
-        "edges": [asdict(e) for e in graph.edges],
-        "entry_points": graph.entry_points,
-    }
-    callgraph_path = PREPROCESS_DIR / f"{client_name}_callgraph.json"
-    callgraph_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    return graph
+    logger.info(
+        "[_build_callgraph] client=%s nodes=%d edges=%d",
+        client_name,
+        len(cg.nodes),
+        len(cg.edges),
+    )
+    return cg
 
 
-def _identifier_tokens(text: str) -> list[str]:
-    raw = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", text)
-    out: list[str] = []
-    for token in raw:
-        out.append(token)
-        snake_parts = [p for p in token.split("_") if p]
-        out.extend(snake_parts)
-        camel_parts = re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+", token)
-        out.extend(camel_parts)
-    return out
+# ────────────────────────────────────────────────────────────────────────
+# Task C — Enhanced vector index
+# ────────────────────────────────────────────────────────────────────────
 
 
-def _compute_depths(callgraph: CallGraph) -> dict[str, dict[str, int]]:
-    adj: dict[str, list[str]] = defaultdict(list)
-    for e in callgraph.edges:
-        adj[e.caller].append(e.callee)
+def _compute_call_depths(callgraph: CallGraph) -> dict[str, tuple[int, list[str]]]:
+    """BFS from entry points to compute min call depth & workflow hints for each node."""
+    adjacency: dict[str, list[str]] = defaultdict(list)
+    for edge in callgraph.edges:
+        adjacency[edge["caller"]].append(edge["callee"])
 
-    all_depths: dict[str, dict[str, int]] = {}
-    for workflow_id, entries in callgraph.entry_points.items():
-        depth = {n: 999 for n in callgraph.nodes}
-        dq = deque()
+    depths: dict[str, int] = {}
+    hints: dict[str, set[str]] = defaultdict(set)
 
+    for wf_id, entries in callgraph.entry_points.items():
+        queue: deque[tuple[str, int]] = deque()
+        visited: set[str] = set()
         for ep in entries:
-            if ep in depth:
-                depth[ep] = 0
-                dq.append(ep)
+            queue.append((ep, 0))
+            visited.add(ep)
 
-        while dq:
-            cur = dq.popleft()
-            for nxt in adj.get(cur, []):
-                if depth[nxt] > depth[cur] + 1:
-                    depth[nxt] = depth[cur] + 1
-                    dq.append(nxt)
+        while queue:
+            node, depth = queue.popleft()
+            if node not in depths or depth < depths[node]:
+                depths[node] = depth
+            hints[node].add(wf_id)
 
-        all_depths[workflow_id] = depth
+            for callee in adjacency.get(node, []):
+                if callee not in visited:
+                    visited.add(callee)
+                    queue.append((callee, depth + 1))
 
-    return all_depths
+    result: dict[str, tuple[int, list[str]]] = {}
+    for node in set(list(depths.keys()) + list(hints.keys())):
+        result[node] = (depths.get(node, 999), sorted(hints.get(node, set())))
+    return result
 
 
-@lru_cache(maxsize=1)
-def _choose_embedding_model():
-    # Priority:
-    # 1) nomic-embed-code (Ollama)
-    # 2) text-embedding-3-large (OpenAI)
-    # 3) all-MiniLM-L6-v2 (HF)
+def _build_vector_index(client_name: str, symbols: list[SymbolInfo], callgraph: CallGraph) -> None:
+    """Task C: Build Chroma vector index with call-graph enhanced metadata."""
     try:
-        OllamaEmbeddings = importlib.import_module("langchain_ollama").OllamaEmbeddings
+        try:
+            from langchain_huggingface import HuggingFaceEmbeddings
+        except ImportError:
+            from langchain_community.embeddings import HuggingFaceEmbeddings
+        from langchain_chroma import Chroma
+        from langchain_text_splitters import RecursiveCharacterTextSplitter, Language
+    except ImportError:
+        logger.warning("langchain/chroma dependencies not available — skipping vector index build")
+        return
 
-        return OllamaEmbeddings(model="nomic-embed-code")
-    except Exception:
-        pass
-
-    try:
-        if os.getenv("OPENAI_API_KEY"):
-            OpenAIEmbeddings = importlib.import_module("langchain_openai").OpenAIEmbeddings
-
-            return OpenAIEmbeddings(model="text-embedding-3-large")
-    except Exception:
-        pass
-
-    # Prefer the new provider package to avoid deprecation warnings from
-    # langchain_community.HuggingFaceEmbeddings.
-    try:
-        HuggingFaceEmbeddings = importlib.import_module(
-            "langchain_huggingface"
-        ).HuggingFaceEmbeddings
-        return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    except Exception:
-        pass
-
-    # Backward-compatible fallback for environments that don't have
-    # langchain-huggingface installed yet.
-    try:
-        HuggingFaceEmbeddings = importlib.import_module(
-            "langchain_community.embeddings"
-        ).HuggingFaceEmbeddings
-        return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    except Exception:
-        # Offline/CI fallback: deterministic fake embeddings to keep pipeline functional.
-        FakeEmbeddings = importlib.import_module("langchain_community.embeddings").FakeEmbeddings
-        return FakeEmbeddings(size=384)
-
-
-def _language_for_text_splitter(language_name: str):
-    Language = importlib.import_module("langchain_text_splitters").Language
-
-    mapping = {
+    lang_key, _ = LANGUAGE_GRAMMARS[client_name]
+    lang_map = {
         "go": Language.GO,
         "rust": Language.RUST,
         "java": Language.JAVA,
         "typescript": Language.TS,
     }
-    return mapping[language_name]
-
-
-def _line_offsets(text: str) -> list[int]:
-    offsets = [0]
-    for idx, ch in enumerate(text):
-        if ch == "\n":
-            offsets.append(idx + 1)
-    return offsets
-
-
-def _byte_to_line(text: str, byte_offset: int) -> int:
-    # byte_offset here is char offset for UTF-8-safe chunks from python slicing.
-    # best effort for metadata usage.
-    return text.count("\n", 0, max(0, byte_offset)) + 1
-
-
-def _build_vector_index(client_name: str, symbols: list[SymbolInfo], callgraph: CallGraph):
-    """Build persistent Chroma vector index with callgraph-enhanced metadata.
-
-    Output: ./output/preprocess/<client>_chroma/
-    """
-
-    Chroma = importlib.import_module("langchain_chroma").Chroma
-    Document = importlib.import_module("langchain_core.documents").Document
-    RecursiveCharacterTextSplitter = importlib.import_module(
-        "langchain_text_splitters"
-    ).RecursiveCharacterTextSplitter
-
-    language_name = LANGUAGE_GRAMMARS[client_name][0]
-    lang_enum = _language_for_text_splitter(language_name)
+    ts_lang = lang_map.get(lang_key, Language.GO)
 
     splitter = RecursiveCharacterTextSplitter.from_language(
-        language=lang_enum,
-        chunk_size=1200,
-        chunk_overlap=120,
+        language=ts_lang,
+        chunk_size=2000,
+        chunk_overlap=200,
     )
 
-    depths_by_workflow = _compute_depths(callgraph)
+    depths_map = _compute_call_depths(callgraph)
+    name_to_sym: dict[str, SymbolInfo] = {}
+    for sym in symbols:
+        name_to_sym[sym.qualified_name] = sym
 
-    docs: list[Any] = []
+    # Adjacency for caller lookup
+    callee_to_callers: dict[str, list[str]] = defaultdict(list)
+    caller_to_callees: dict[str, list[str]] = defaultdict(list)
+    for edge in callgraph.edges:
+        callee_to_callers[edge["callee"]].append(edge["caller"])
+        caller_to_callees[edge["caller"]].append(edge["callee"])
 
-    for s in symbols:
-        split_texts = splitter.split_text(s.source_code)
-        cursor = 0
+    documents = []
+    metadatas = []
+    ids = []
 
-        callers = s.called_by
-        callees = s.calls
+    for idx, sym in enumerate(symbols):
+        if not sym.source_code.strip():
+            continue
 
-        workflow_hints: list[str] = []
-        nearest_depth = 999
+        chunks = splitter.split_text(sym.source_code)
+        depth, wf_hints = depths_map.get(sym.qualified_name, (999, []))
 
-        for wf in WORKFLOW_IDS:
-            depth = depths_by_workflow.get(wf, {}).get(s.qualified_name, 999)
-            if depth < 999:
-                workflow_hints.append(wf)
-            if depth < nearest_depth:
-                nearest_depth = depth
-
-        if nearest_depth == 999:
-            nearest_depth = 999
-
-        for chunk in split_texts:
-            # best-effort locate to infer approximate line interval in full file.
-            rel_pos = s.source_code.find(chunk, cursor)
-            if rel_pos == -1:
-                rel_pos = cursor
-            cursor = rel_pos + len(chunk)
-
-            chunk_start_line = s.start_line + _byte_to_line(s.source_code, rel_pos) - 1
-            chunk_end_line = min(
-                s.end_line,
-                chunk_start_line + chunk.count("\n"),
-            )
-
-            metadata = {
+        for chunk_idx, chunk in enumerate(chunks):
+            doc_id = f"{client_name}_{idx}_{chunk_idx}"
+            meta = {
                 "client_name": client_name,
-                "language": language_name,
-                "file_path": s.file_path,
-                "function_name": s.function_name,
-                "qualified_name": s.qualified_name,
-                "start_line": chunk_start_line,
-                "end_line": chunk_end_line,
-                "call_depth": nearest_depth,
-                "workflow_hints": ",".join(workflow_hints) if workflow_hints else "",
-                "callers": ",".join(callers) if callers else "",
-                "callees": ",".join(callees) if callees else "",
+                "language": lang_key,
+                "file_path": sym.file,
+                "function_name": sym.function_name,
+                "qualified_name": sym.qualified_name,
+                "start_line": sym.start_line,
+                "end_line": sym.end_line,
+                "call_depth": depth,
+                "workflow_hints": ",".join(wf_hints),
+                "callers": ",".join(callee_to_callers.get(sym.qualified_name, [])[:10]),
+                "callees": ",".join(caller_to_callees.get(sym.qualified_name, [])[:10]),
             }
-            docs.append(Document(page_content=chunk, metadata=metadata))
+            documents.append(chunk)
+            metadatas.append(meta)
+            ids.append(doc_id)
 
-    persist_dir = PREPROCESS_DIR / f"{client_name}_chroma"
-    if persist_dir.exists():
-        shutil.rmtree(persist_dir)
-    persist_dir.mkdir(parents=True, exist_ok=True)
+    if not documents:
+        logger.info("[_build_vector_index] No documents to index for %s", client_name)
+        return
 
-    embeddings = _choose_embedding_model()
-
-    # Recreate for deterministic behavior under force rebuild path.
-    Chroma.from_documents(
-        documents=docs,
-        embedding=embeddings,
-        collection_name=client_name,
-        persist_directory=str(persist_dir),
-    )
-
-
-def _build_bm25_index(client_name: str, symbols: list[SymbolInfo]):
-    """Build and persist BM25 index by identifier tokenization.
-
-    Output: ./output/preprocess/<client>_bm25.pkl
-    """
-
-    BM25Okapi = importlib.import_module("rank_bm25").BM25Okapi
-
-    tokenized_corpus: list[list[str]] = []
-    payload_docs: list[dict[str, Any]] = []
-
-    for s in symbols:
-        tokens = _identifier_tokens(s.source_code)
-        tokenized_corpus.append(tokens)
-        payload_docs.append(
-            {
-                "page_content": s.source_code,
-                "metadata": {
-                    "client_name": client_name,
-                    "language": LANGUAGE_GRAMMARS[client_name][0],
-                    "file_path": s.file_path,
-                    "function_name": s.function_name,
-                    "qualified_name": s.qualified_name,
-                    "start_line": s.start_line,
-                    "end_line": s.end_line,
-                    "callers": s.called_by,
-                    "callees": s.calls,
-                },
-            }
+    persist_dir = str(PREPROCESS_PATH / f"{client_name}_chroma")
+    try:
+        embedding = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        db = Chroma.from_texts(
+            texts=documents,
+            metadatas=metadatas,
+            ids=ids,
+            embedding=embedding,
+            collection_name=client_name,
+            persist_directory=persist_dir,
         )
+        logger.info(
+            "[_build_vector_index] client=%s docs=%d persist=%s",
+            client_name,
+            len(documents),
+            persist_dir,
+        )
+    except Exception:
+        logger.error("Failed to build vector index for %s", client_name, exc_info=True)
 
-    bm25 = BM25Okapi(tokenized_corpus)
 
-    bundle = {
-        "tokenized_corpus": tokenized_corpus,
-        "documents": payload_docs,
-        "bm25": bm25,
-    }
+# ────────────────────────────────────────────────────────────────────────
+# Task D — BM25 exact-match index
+# ────────────────────────────────────────────────────────────────────────
 
-    out_path = PREPROCESS_DIR / f"{client_name}_bm25.pkl"
-    with out_path.open("wb") as f:
-        pickle.dump(bundle, f)
+
+def _build_bm25_index(client_name: str, symbols: list[SymbolInfo]) -> None:
+    """Task D: Build BM25 index from tokenized function bodies."""
+    try:
+        from rank_bm25 import BM25Okapi
+    except ImportError:
+        logger.warning("rank_bm25 not installed — skipping BM25 index build")
+        return
+
+    corpus: list[list[str]] = []
+    doc_metadata: list[dict[str, Any]] = []
+
+    for sym in symbols:
+        if not sym.source_code.strip():
+            continue
+        tokens = tokenize_source(sym.source_code)
+        corpus.append(tokens)
+        doc_metadata.append({
+            "client_name": client_name,
+            "file_path": sym.file,
+            "function_name": sym.function_name,
+            "qualified_name": sym.qualified_name,
+            "start_line": sym.start_line,
+            "end_line": sym.end_line,
+            "source_code": sym.source_code,
+        })
+
+    if not corpus:
+        logger.info("[_build_bm25_index] No corpus for %s", client_name)
+        return
+
+    bm25 = BM25Okapi(corpus)
+    out_path = PREPROCESS_PATH / f"{client_name}_bm25.pkl"
+    with open(out_path, "wb") as f:
+        pickle.dump({"bm25": bm25, "corpus": corpus, "metadata": doc_metadata}, f)
+
+    logger.info("[_build_bm25_index] client=%s docs=%d path=%s", client_name, len(corpus), out_path)
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Public entry point
+# ────────────────────────────────────────────────────────────────────────
 
 
 def _artifacts_exist(client_name: str) -> bool:
-    return (
-        (PREPROCESS_DIR / f"{client_name}_symbols.json").exists()
-        and (PREPROCESS_DIR / f"{client_name}_callgraph.json").exists()
-        and (PREPROCESS_DIR / f"{client_name}_bm25.pkl").exists()
-        and (PREPROCESS_DIR / f"{client_name}_chroma").exists()
-    )
+    """Check if all preprocessing artifacts already exist for *client_name*."""
+    base = PREPROCESS_PATH
+    return all([
+        (base / f"{client_name}_symbols.json").exists(),
+        (base / f"{client_name}_callgraph.json").exists(),
+        (base / f"{client_name}_bm25.pkl").exists(),
+        (base / f"{client_name}_chroma").exists(),
+    ])
 
 
-def _load_symbols(client_name: str) -> list[SymbolInfo]:
-    payload = json.loads((PREPROCESS_DIR / f"{client_name}_symbols.json").read_text(encoding="utf-8"))
-    return [SymbolInfo(**item) for item in payload]
+def run_preprocessing(client_name: str, force_rebuild: bool = False) -> dict[str, bool]:
+    """Run the full preprocessing pipeline for a single client.
 
-
-def _load_callgraph(client_name: str) -> CallGraph:
-    payload = json.loads((PREPROCESS_DIR / f"{client_name}_callgraph.json").read_text(encoding="utf-8"))
-    return CallGraph(
-        nodes=payload["nodes"],
-        edges=[CallEdge(**e) for e in payload["edges"]],
-        entry_points=payload["entry_points"],
-    )
-
-
-def run_preprocessing(client_name: str, force_rebuild: bool = False) -> dict[str, Any]:
-    """Run full preprocessing pipeline for one client.
-
-    Tasks executed in order:
-      A) _extract_symbols
-      B) _build_callgraph
-      C) _build_vector_index
-      D) _build_bm25_index
+    Returns a dict compatible with PreprocessStatus fields.
     """
+    PREPROCESS_PATH.mkdir(parents=True, exist_ok=True)
 
-    if client_name not in CLIENT_NAMES:
-        raise ValueError(f"Unsupported client_name: {client_name}")
-
-    PREPROCESS_DIR.mkdir(parents=True, exist_ok=True)
-
-    if _artifacts_exist(client_name) and not force_rebuild:
+    if not force_rebuild and _artifacts_exist(client_name):
+        logger.info("[run_preprocessing] client=%s — all artifacts exist, skipping", client_name)
         return {
-            "client_name": client_name,
-            "skipped": True,
-            "symbols": str(PREPROCESS_DIR / f"{client_name}_symbols.json"),
-            "callgraph": str(PREPROCESS_DIR / f"{client_name}_callgraph.json"),
-            "bm25": str(PREPROCESS_DIR / f"{client_name}_bm25.pkl"),
-            "chroma": str(PREPROCESS_DIR / f"{client_name}_chroma"),
+            "symbols_ready": True,
+            "callgraph_ready": True,
+            "vector_index_ready": True,
+            "bm25_index_ready": True,
         }
 
-    _ensure_dependencies()
-
-    symbols = _extract_symbols(client_name)
-    callgraph = _build_callgraph(client_name, symbols)
-    _build_vector_index(client_name, symbols, callgraph)
-    _build_bm25_index(client_name, symbols)
-
-    return {
-        "client_name": client_name,
-        "skipped": False,
-        "symbol_count": len(symbols),
-        "node_count": len(callgraph.nodes),
-        "edge_count": len(callgraph.edges),
-        "symbols": str(PREPROCESS_DIR / f"{client_name}_symbols.json"),
-        "callgraph": str(PREPROCESS_DIR / f"{client_name}_callgraph.json"),
-        "bm25": str(PREPROCESS_DIR / f"{client_name}_bm25.pkl"),
-        "chroma": str(PREPROCESS_DIR / f"{client_name}_chroma"),
+    status = {
+        "symbols_ready": False,
+        "callgraph_ready": False,
+        "vector_index_ready": False,
+        "bm25_index_ready": False,
     }
 
+    # Task A
+    symbols = _extract_symbols(client_name)
+    sym_path = PREPROCESS_PATH / f"{client_name}_symbols.json"
+    with open(sym_path, "w") as f:
+        json.dump([asdict(s) for s in symbols], f, indent=2)
+    status["symbols_ready"] = True
 
-def load_bm25_bundle(client_name: str) -> dict[str, Any]:
-    with (PREPROCESS_DIR / f"{client_name}_bm25.pkl").open("rb") as f:
-        return pickle.load(f)
+    # Task B
+    callgraph = _build_callgraph(client_name, symbols)
+    cg_path = PREPROCESS_PATH / f"{client_name}_callgraph.json"
+    with open(cg_path, "w") as f:
+        json.dump(asdict(callgraph), f, indent=2)
+    status["callgraph_ready"] = True
+
+    # Task C
+    _build_vector_index(client_name, symbols, callgraph)
+    status["vector_index_ready"] = True
+
+    # Task D
+    _build_bm25_index(client_name, symbols)
+    status["bm25_index_ready"] = True
+
+    return status
 
 
-def load_callgraph(client_name: str) -> CallGraph:
-    return _load_callgraph(client_name)
+def run_all_preprocessing(force_rebuild: bool = False) -> dict[str, dict[str, bool]]:
+    """Run preprocessing for all configured clients."""
+    results: dict[str, dict[str, bool]] = {}
+    for client in CLIENT_NAMES:
+        results[client] = run_preprocessing(client, force_rebuild=force_rebuild)
+    return results
