@@ -19,6 +19,17 @@ P2_A_CLASS_CONVERGENCE_THRESHOLD: float = 0.10
 OSCILLATION_WINDOW: int = 3
 OSCILLATION_BAND: int = 2
 
+# ── Deep-dive phase (post A-class convergence) ──────────────────────────
+# After A-class vocabulary alignment converges, the system enters a
+# "deep-dive" phase: previously discovered B-class findings are fed back
+# into sub-agent prompts so they can search for similar patterns in other
+# workflows.  This phase runs for up to MAX_ITER_DEEPDIVE additional rounds.
+MAX_ITER_DEEPDIVE: int = 3
+# Deep-dive converges when B-class count is stable (change ≤ threshold)
+# for DEEPDIVE_STABLE_WINDOW consecutive iterations.
+DEEPDIVE_STABLE_WINDOW: int = 2
+DEEPDIVE_B_CLASS_CHANGE_THRESHOLD: int = 1  # max allowed change per iter
+
 # ── Client names (order used everywhere) ────────────────────────────────
 CLIENT_NAMES: list[str] = [
     "prysm",

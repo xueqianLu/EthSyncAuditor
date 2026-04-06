@@ -222,4 +222,48 @@ machine structure — only replace the guard/action names as instructed:
 {% endfor %}
 {% endif %}
 
+{% if deepdive_active and known_vulnerability_patterns %}
+## 🔍 Deep-Dive: Previously Discovered Security Divergences
+
+The cross-client comparison has already found the following vulnerability patterns.
+Your job in this iteration is to **search for similar patterns in OTHER workflows and states**
+that have not yet been checked. Expand your LSG to expose these attack surfaces.
+
+{% for p in known_vulnerability_patterns %}
+### Pattern: {{ p.category }}
+- **What was found**: {{ p.example_description }}
+- **Attack surface**: {{ p.category_description }}
+- **Severity**: {{ p.severity }}
+- **Workflow where found**: `{{ p.example_workflow }}` (guard: `{{ p.example_guard }}`)
+- **Deviating client(s)**: {{ p.deviating_clients | join(', ') }}
+
+➡️ **Search {{ client_name }}'s code** for the same pattern in ALL other workflows.
+   For example, if peer penalty divergence was found in `initial_sync`, check
+   `regular_sync`, `checkpoint_sync`, etc. for how {{ client_name }} penalizes peers
+   for equivalent offenses. Add states/transitions for any new findings.
+{% endfor %}
+
+### Additional Deep-Dive Checks for {{ client_name }}
+
+Focus on these specific areas that previous rounds may have missed:
+
+1. **Peer penalty in EVERY workflow**: How does {{ client_name }} handle malformed/invalid
+   data from peers in regular_sync gossip, checkpoint_sync backfill, aggregate verification?
+   Model the exact penalty action (Ban, ScoreDecrease, Disconnect, Ignore).
+
+2. **Timeout/stall recovery in EVERY sync workflow**: Does {{ client_name }} have explicit
+   stall detection states in initial_sync, regular_sync, checkpoint_sync? If not, what
+   happens when a peer sends data very slowly? Model the timeout transition.
+
+3. **Safety guards completeness**: Check if {{ client_name }} implements ALL of these:
+   - `WeakSubjectivityCheckFailed` in checkpoint_sync
+   - `AttestationIsNotSlashable` in attestation_generate
+   - `BlockIsNotSlashable` in block_generate
+   - `OptimisticSyncDepthExceedsLimit` in execute_layer_relation
+   If any are missing, this is important — include a note in the state description.
+
+4. **Error cascade paths**: When `engine_newPayload` returns INVALID, what exactly does
+   {{ client_name }} do? Invalidate only that block, or all descendants? Model the full chain.
+{% endif %}
+
 Output the complete LSG as structured YAML-compatible JSON.

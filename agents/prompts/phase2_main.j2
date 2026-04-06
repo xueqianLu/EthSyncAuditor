@@ -1,6 +1,11 @@
 {# Phase 2 Main Agent prompt template — Security-Focused Audit #}
 You are the LSG horizontal comparison agent for the EthAuditor system.
 Iteration: {{ iteration }}.
+{% if deepdive_active %}
+**⚠️ DEEP-DIVE MODE**: Vocabulary alignment is complete. This round focuses EXCLUSIVELY
+on finding NEW security-relevant B-class diffs that prior rounds missed. Do NOT repeat
+findings already listed below — search for NEW ones.
+{% endif %}
 
 Your PRIMARY GOAL is to discover **security-relevant divergences** between client
 implementations — differences in sync/validation state machines that could be
@@ -120,6 +125,36 @@ For each B-class diff, you MUST provide ALL of these fields:
 ### Step 4 — Compute Metrics
 
 `logic_diff_rate = B-class count / total comparison items`
+
+{% if deepdive_active and known_vulnerability_patterns %}
+### 🔍 Deep-Dive: Previously Discovered Vulnerability Patterns
+
+The following security-relevant patterns have ALREADY been found. Do NOT repeat these.
+Instead, search for the SAME pattern categories in OTHER workflows/states:
+
+{% for p in known_vulnerability_patterns %}
+- **{{ p.category }}** [{{ p.severity }}]: {{ p.example_description }}
+  (Found in `{{ p.example_workflow }}`, guard: `{{ p.example_guard }}`, deviating: {{ p.deviating_clients | join(', ') }})
+{% endfor %}
+
+#### Deep-Dive Search Directives
+
+For each pattern above, systematically check ALL 7 workflows. Focus especially on:
+
+1. **Workflows previously marked as "agreement"**: These may appear identical at surface level
+   but have subtle differences in error handling, peer penalty, or timeout behavior that
+   earlier rounds missed due to insufficient LSG granularity.
+
+2. **Cross-workflow pattern propagation**: If peer penalty divergence exists in `initial_sync`,
+   check `regular_sync`, `checkpoint_sync` etc. for the same divergence on similar guards.
+
+3. **Compound vulnerabilities**: Check if two individually-MAJOR findings combine into a
+   CRITICAL scenario. Example: lenient peer penalty (B-class #1) + missing stall detection
+   (B-class #2) = an attacker can slow-feed invalid data AND stay connected indefinitely.
+
+4. **Threshold / parameter differences**: Even if clients have the SAME guard, do they use
+   different thresholds? (e.g., peer ban after 3 vs 10 offenses, timeout of 5s vs 30s).
+{% endif %}
 
 ### Output
 

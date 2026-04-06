@@ -104,6 +104,11 @@ def make_initial_state() -> dict[str, Any]:
         "discovery_reports": [],
         "a_class_feedback": [],
         "sparsity_hints": [],
+        # Deep-dive
+        "deepdive_active": False,
+        "deepdive_iteration": 0,
+        "prev_b_class_count": -1,
+        "known_vulnerability_patterns": [],
     }
 
 
@@ -414,15 +419,16 @@ def phase2_fanout(state: GlobalState) -> list[Send]:
 def route_after_phase2_main(state: GlobalState) -> str:
     """Convergence / max-iter check for Phase 2.
 
-    Phase 2 converges when A-class diffs (vocabulary misalignment) stabilize,
-    NOT when B-class diffs (inherent design differences) disappear — B-class
-    diffs are the desired output of the audit, not a convergence signal.
+    Phase 2 has two stages:
 
-    Convergence criteria (any one triggers):
-    1. ``a_class_count == 0`` — perfect vocabulary alignment.
-    2. A-class **delta** between consecutive iterations < threshold.
-    3. **Oscillation** detected — A-class count oscillates within a narrow band
-       for ``OSCILLATION_WINDOW`` consecutive iterations.
+    **Stage 1 — Vocabulary alignment** (``deepdive_active=False``):
+    Converges when A-class diffs stabilize (same criteria as before).
+
+    **Stage 2 — Deep-dive** (``deepdive_active=True``):
+    After A-class converges, the system enters deep-dive mode.  Previously
+    discovered B-class vulnerability patterns are fed back into sub-agent
+    prompts so they search for similar issues in other workflows.
+    Converges when B-class count is stable or ``MAX_ITER_DEEPDIVE`` reached.
     """
     global _last_p2_convergence_reason
 
@@ -430,18 +436,71 @@ def route_after_phase2_main(state: GlobalState) -> str:
     a_class_count = state.get("a_class_count", -1)
     prev_a_class_count = state.get("prev_a_class_count", -1)
     history = state.get("iteration_history", [])
+    deepdive_active = state.get("deepdive_active", False)
+    deepdive_iteration = state.get("deepdive_iteration", 0)
+
+    # ════════════════════════════════════════════════════════════════════
+    # Stage 2: Deep-dive mode — check B-class stability
+    # ════════════════════════════════════════════════════════════════════
+    if deepdive_active:
+        diff_report = state.get("diff_report", {})
+        b_count = len(diff_report.get("b_class_diffs", []))
+        prev_b_count = state.get("prev_b_class_count", -1)
+
+        # B-class stability check
+        if prev_b_count >= 0:
+            b_change = abs(b_count - prev_b_count)
+
+            # Check if B-class has been stable for DEEPDIVE_STABLE_WINDOW iters
+            recent_b = [
+                h.get("b_class_count", 0)
+                for h in history[-config.DEEPDIVE_STABLE_WINDOW:]
+            ] if len(history) >= config.DEEPDIVE_STABLE_WINDOW else []
+
+            if (recent_b
+                    and max(recent_b) - min(recent_b) <= config.DEEPDIVE_B_CLASS_CHANGE_THRESHOLD):
+                _last_p2_convergence_reason = (
+                    f"Deep-dive converged at iteration {iteration} "
+                    f"(deepdive iter {deepdive_iteration}): B-class stable at "
+                    f"{b_count} over last {config.DEEPDIVE_STABLE_WINDOW} rounds "
+                    f"(values={recent_b})."
+                )
+                logger.info(
+                    "[router_phase2] DEEP-DIVE CONVERGED — B-class stable: %s",
+                    recent_b,
+                )
+                return "phase2_converged"
+
+        # Max deep-dive iterations guard
+        if deepdive_iteration >= config.MAX_ITER_DEEPDIVE:
+            _last_p2_convergence_reason = (
+                f"Deep-dive MAX_ITER ({config.MAX_ITER_DEEPDIVE}) reached at "
+                f"iteration {iteration}. B-class count: {b_count}."
+            )
+            logger.info(
+                "[router_phase2] DEEP-DIVE MAX_ITER — stopping after %d rounds",
+                deepdive_iteration,
+            )
+            return "phase2_converged"
+
+        # Continue deep-dive
+        return "phase2_next_iter"
+
+    # ════════════════════════════════════════════════════════════════════
+    # Stage 1: Vocabulary alignment — check A-class convergence
+    # ════════════════════════════════════════════════════════════════════
 
     # ── Criterion 1: zero A-class diffs ────────────────────────────────
     if a_class_count == 0:
         _last_p2_convergence_reason = (
             f"Zero A-class diffs at iteration {iteration} — "
-            f"perfect vocabulary alignment achieved."
+            f"perfect vocabulary alignment achieved. Entering deep-dive."
         )
         logger.info(
-            "[router_phase2] CONVERGED at iter=%d — zero A-class diffs",
+            "[router_phase2] A-class CONVERGED at iter=%d — entering deep-dive",
             iteration,
         )
-        return "phase2_converged"
+        return "phase2_enter_deepdive"
 
     # ── Criterion 2: A-class delta stabilization ───────────────────────
     if prev_a_class_count >= 0 and a_class_count >= 0:
@@ -451,15 +510,13 @@ def route_after_phase2_main(state: GlobalState) -> str:
             _last_p2_convergence_reason = (
                 f"A-class delta stabilized at iteration {iteration}: "
                 f"prev={prev_a_class_count}, cur={a_class_count}, "
-                f"delta_rate={delta_rate:.4f} < threshold "
-                f"{config.P2_A_CLASS_CONVERGENCE_THRESHOLD}."
+                f"delta_rate={delta_rate:.4f}. Entering deep-dive."
             )
             logger.info(
-                "[router_phase2] CONVERGED at iter=%d — A-class delta "
-                "stabilized (prev=%d, cur=%d, delta_rate=%.4f)",
-                iteration, prev_a_class_count, a_class_count, delta_rate,
+                "[router_phase2] A-class STABILIZED at iter=%d — entering deep-dive",
+                iteration,
             )
-            return "phase2_converged"
+            return "phase2_enter_deepdive"
 
     # ── Criterion 3: oscillation detection ─────────────────────────────
     if len(history) >= config.OSCILLATION_WINDOW:
@@ -468,16 +525,14 @@ def route_after_phase2_main(state: GlobalState) -> str:
         if max(recent_a) - min(recent_a) <= config.OSCILLATION_BAND:
             _last_p2_convergence_reason = (
                 f"A-class oscillation detected at iteration {iteration}: "
-                f"last {config.OSCILLATION_WINDOW} values={recent_a}, "
-                f"band={max(recent_a) - min(recent_a)} ≤ "
-                f"{config.OSCILLATION_BAND}."
+                f"last {config.OSCILLATION_WINDOW} values={recent_a}. "
+                f"Entering deep-dive."
             )
             logger.info(
-                "[router_phase2] CONVERGED at iter=%d — A-class oscillation "
-                "detected over last %d iters: %s",
-                iteration, config.OSCILLATION_WINDOW, recent_a,
+                "[router_phase2] A-class OSCILLATING at iter=%d — entering deep-dive",
+                iteration,
             )
-            return "phase2_converged"
+            return "phase2_enter_deepdive"
 
     # ── MAX_ITER guard ─────────────────────────────────────────────────
     if iteration >= config.MAX_ITER_PHASE2:
@@ -496,8 +551,35 @@ def route_after_phase2_main(state: GlobalState) -> str:
 
 
 def phase2_next_iter_node(state: GlobalState) -> dict[str, Any]:
-    """Bump Phase 2 iteration counter and carry forward prev_a_class_count."""
+    """Bump Phase 2 iteration counter and carry forward tracking state."""
+    diff_report = state.get("diff_report", {})
+    b_count = len(diff_report.get("b_class_diffs", []))
+    result: dict[str, Any] = {
+        "phase2_iteration": state.get("phase2_iteration", 1) + 1,
+        "prev_a_class_count": state.get("a_class_count", -1),
+        "prev_b_class_count": b_count,
+    }
+    if state.get("deepdive_active"):
+        result["deepdive_iteration"] = state.get("deepdive_iteration", 0) + 1
+    return result
+
+
+def phase2_enter_deepdive_node(state: GlobalState) -> dict[str, Any]:
+    """Transition from A-class alignment to B-class deep-dive mode.
+
+    Activates deep-dive, bumps iteration, and preserves current B-class count
+    as the baseline for stability tracking.
+    """
+    diff_report = state.get("diff_report", {})
+    b_count = len(diff_report.get("b_class_diffs", []))
+    logger.info(
+        "[phase2_enter_deepdive] Entering deep-dive mode with %d known B-class diffs",
+        b_count,
+    )
     return {
+        "deepdive_active": True,
+        "deepdive_iteration": 1,
+        "prev_b_class_count": b_count,
         "phase2_iteration": state.get("phase2_iteration", 1) + 1,
         "prev_a_class_count": state.get("a_class_count", -1),
     }
@@ -540,6 +622,7 @@ def build_graph() -> StateGraph:
     graph.add_node("phase2_sub_agent", phase2_sub_agent_node)
     graph.add_node("phase2_main_agent", phase2_main_agent_node)
     graph.add_node("phase2_next_iter", phase2_next_iter_node)
+    graph.add_node("phase2_enter_deepdive", phase2_enter_deepdive_node)
     graph.add_node("phase2_converged", phase2_converged_node)
     graph.add_node("phase2_force_stop", phase2_force_stop_node)
 
@@ -615,12 +698,20 @@ def build_graph() -> StateGraph:
             "phase2_converged": "phase2_converged",
             "phase2_force_stop": "phase2_force_stop",
             "phase2_next_iter": "phase2_next_iter",
+            "phase2_enter_deepdive": "phase2_enter_deepdive",
         },
     )
 
     # ── Phase 2 iteration loop ─────────────────────────────────────────
     graph.add_conditional_edges(
         "phase2_next_iter",
+        lambda _s: "phase2_fanout",
+        {"phase2_fanout": "phase2_fanout"},
+    )
+
+    # ── Phase 2 deep-dive entry → fan-out for another round ───────────
+    graph.add_conditional_edges(
+        "phase2_enter_deepdive",
         lambda _s: "phase2_fanout",
         {"phase2_fanout": "phase2_fanout"},
     )

@@ -129,6 +129,10 @@ def build_phase2_sub_agent(client_name: str, llm=None, callbacks=None):
             if h.get("client") == client_name
         ]
 
+        # ── Deep-dive: previously discovered vulnerability patterns ──────
+        deepdive_active = state.get("deepdive_active", False)
+        known_patterns = state.get("known_vulnerability_patterns", [])
+
         template = _load_prompt_template()
         _prompt = template.render(
             client_name=client_name,
@@ -138,6 +142,8 @@ def build_phase2_sub_agent(client_name: str, llm=None, callbacks=None):
             previous_lsg_yaml=previous_lsg_yaml,
             iteration=iteration,
             sparsity_hints=sparsity_hints,
+            deepdive_active=deepdive_active,
+            known_vulnerability_patterns=known_patterns,
         )
 
         if llm is not None:
