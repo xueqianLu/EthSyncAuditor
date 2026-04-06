@@ -84,6 +84,8 @@ class DiffItem(BaseModel):
     description: str
     severity: str = ""  # "CRITICAL" / "MAJOR" / "MINOR" (B-class only)
     involved_clients: list[str] = Field(default_factory=list)
+    deviating_clients: list[str] = Field(default_factory=list)
+    security_note: str = ""  # attack-surface / vulnerability implication
     evidence: dict[str, Evidence | None] = Field(default_factory=dict)
 
 

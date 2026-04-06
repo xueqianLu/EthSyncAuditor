@@ -88,35 +88,147 @@ def _make_rename_description(
 
 
 def _classify_severity(diff: dict) -> str:
-    """Classify a B-class diff by severity based on its description and state_id.
+    """Classify a B-class diff by severity with **security focus**.
 
     Returns one of: ``"CRITICAL"``, ``"MAJOR"``, ``"MINOR"``.
+
+    The classification prioritises security-relevant divergences:
+    * CRITICAL — missing safety guards, acceptance/rejection split, DoS vector
+    * MAJOR — exploitable asymmetry (peer penalty, timeout, unique state)
+    * MINOR — architectural / granularity difference with limited attack surface
     """
     desc_lower = (diff.get("description", "") or "").lower()
     state_id = diff.get("state_id", "")
+    guard = (diff.get("transition_guard", "") or "").lower()
+    sec_note = (diff.get("security_note", "") or "").lower()
+    combined = desc_lower + " " + sec_note
 
-    # CRITICAL: entire workflow stub/missing, or wildcard state
+    # ── CRITICAL indicators ─────────────────────────────────────────────
+    # Entire workflow missing / stub
     if state_id.endswith(".*") or "stub" in desc_lower or "missing workflow" in desc_lower:
         return "CRITICAL"
-
-    # CRITICAL: state category entirely absent
+    # State category entirely absent
     if "missing in" in desc_lower and "state category" in desc_lower:
         return "CRITICAL"
-
-    # MINOR: extra/missing single transition, granularity differences
-    minor_keywords = [
-        "present in",
-        "but no equivalent",
-        "not present in other",
-        "granularity",
-        "not explicitly",
-        "implicitly",
+    # Safety guard missing — could cause slashing or invalid state acceptance
+    critical_guard_keywords = [
+        "slashable", "slashing", "weak subjectivity", "finality",
+        "accepts", "rejects", "consensus split", "consensus failure",
     ]
-    if any(kw in desc_lower for kw in minor_keywords):
-        return "MINOR"
+    if any(kw in combined for kw in critical_guard_keywords):
+        return "CRITICAL"
 
-    # MAJOR: default for genuine behavioral/architectural differences
-    return "MAJOR"
+    # ── MAJOR indicators ────────────────────────────────────────────────
+    major_keywords = [
+        # Peer penalty divergence → eclipse attack surface
+        "ban", "peer penalty", "penalize", "peer score", "disconnect",
+        "eclipse",
+        # Timeout / stall → DoS / liveness attack
+        "stall", "timeout", "recovery", "backoff", "retry",
+        "dos", "denial of service", "liveness",
+        # Fork-choice / chain view divergence
+        "reorg", "reorgani", "fork choice", "fork-choice", "rollback",
+        "invalidat", "invalid payload", "cascade",
+        # Unique state → missing defense or unique bug
+        "only one client", "unique", "only in", "does not feature",
+        "do not have", "do not model", "doesn't have", "doesn't model",
+        "absent", "not present", "not modeled", "not explicitly",
+        "not featured", "lacks", "no equivalent", "present in",
+        # Optimistic sync divergence
+        "optimistic", "depth limit", "sync limit",
+        # Blob / data availability
+        "blob", "data availability", "kzg",
+        # Fundamental design difference affecting behavior
+        "fundamental", "architectural",
+    ]
+    if any(kw in combined for kw in major_keywords):
+        return "MAJOR"
+
+    # Check if only a minority of clients deviates (1-2 out of 5)
+    deviating = diff.get("deviating_clients", [])
+    involved = diff.get("involved_clients", [])
+    if deviating and len(deviating) <= 2 and len(involved) >= 4:
+        return "MAJOR"  # Minority deviation → likely exploitable
+
+    # ── MINOR: everything else ──────────────────────────────────────────
+    return "MINOR"
+
+
+def _infer_deviating_clients(diff: dict) -> list[str]:
+    """Infer deviating (minority) clients from the description text.
+
+    LLM-generated B-class diffs often contain phrases like:
+    * "Lighthouse and Lodestar model X. Prysm, Grandine, and Teku use Y."
+    * "Prysm's LSG includes an explicit state X. Other clients ..."
+    * "Teku handles the reorg logic inline ... making it less explicit"
+
+    This function attempts to identify the minority group.
+    """
+    if diff.get("deviating_clients"):
+        return diff["deviating_clients"]  # Already set
+
+    desc = diff.get("description", "")
+    involved = diff.get("involved_clients", [])
+    if not desc or len(involved) < 3:
+        return []
+
+    from config import CLIENT_NAMES
+
+    desc_lower = desc.lower()
+
+    # Strategy: find which clients are named in the "contrast" clause
+    # Patterns:  "ClientA ... in contrast/unlike/however/whereas, ClientB ..."
+    #            "ClientA's ... Other clients ..."
+    #            "ClientA does not ... Other clients do ..."
+    contrast_markers = [
+        " in contrast", " unlike ", " however", " whereas ",
+        " on the other hand", " does not ", " doesn't ", " do not ",
+        " don't ", "other clients", " less explicit", " not explicitly",
+        " absence ", " lacks ", " absent ", " missing ",
+    ]
+
+    # Find the position of the first contrast marker
+    marker_pos = len(desc_lower)
+    found_marker = ""
+    for marker in contrast_markers:
+        pos = desc_lower.find(marker)
+        if pos != -1 and pos < marker_pos:
+            marker_pos = pos
+            found_marker = marker
+
+    if marker_pos >= len(desc_lower):
+        # No contrast marker found — can't infer
+        return []
+
+    # Clients mentioned before the marker vs after
+    before = desc_lower[:marker_pos]
+    after = desc_lower[marker_pos:]
+
+    clients_before: list[str] = []
+    clients_after: list[str] = []
+    for c in CLIENT_NAMES:
+        if c.lower() in before:
+            clients_before.append(c)
+        if c.lower() in after:
+            clients_after.append(c)
+
+    # The minority group is the deviating set
+    if clients_before and clients_after:
+        if len(clients_before) <= len(clients_after):
+            return sorted(clients_before)
+        else:
+            return sorted(clients_after)
+
+    # Pattern: "ClientX's LSG includes ... Other clients ..."
+    # → ClientX is unique (deviating)
+    if "other clients" in after.lower() and clients_before:
+        return sorted(clients_before)
+
+    # Fallback: check if one client is singled out
+    if len(clients_before) == 1 and not clients_after:
+        return clients_before
+
+    return []
 
 
 # ── Builder ─────────────────────────────────────────────────────────────
@@ -168,8 +280,11 @@ def build_phase2_main_agent(llm=None, callbacks=None):
                 b_diffs_out = []
                 for d in report.b_class_diffs:
                     dd = d.model_dump()
-                    if not dd.get("severity"):
-                        dd["severity"] = _classify_severity(dd)
+                    # Infer deviating_clients from description if not set
+                    if not dd.get("deviating_clients"):
+                        dd["deviating_clients"] = _infer_deviating_clients(dd)
+                    # Re-classify severity with security-focused rules
+                    dd["severity"] = _classify_severity(dd)
                     b_diffs_out.append(dd)
                 return {
                     "diff_report": {

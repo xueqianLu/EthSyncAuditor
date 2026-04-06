@@ -162,17 +162,17 @@ def test_classify_severity():
         "description": "State category `validate` exists in X but is missing in Y",
     }) == "CRITICAL"
 
-    # MINOR: transition present in one but not the other
+    # MAJOR: transition present in one but not the other (security: missing guard)
     assert _classify_severity({
         "state_id": "initial_sync.validate",
         "description": "Transition present in prysm but no equivalent in lighthouse",
-    }) == "MINOR"
+    }) == "MAJOR"
 
-    # MAJOR: default for other differences
+    # MINOR: default for non-security-relevant differences
     assert _classify_severity({
         "state_id": "initial_sync.validate",
         "description": "Different validation approach between prysm and lighthouse",
-    }) == "MAJOR"
+    }) == "MINOR"
 
     print("  OK: _classify_severity")
 

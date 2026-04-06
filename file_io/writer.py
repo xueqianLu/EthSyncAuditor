@@ -273,22 +273,35 @@ def _agreement_workflows(
 
 
 def _classify_severity_fallback(diff: dict) -> str:
-    """Fallback severity classification for B-class diffs missing the field."""
+    """Fallback severity classification for B-class diffs — security-focused."""
     desc_lower = (diff.get("description", "") or "").lower()
     state_id = diff.get("state_id", "")
+    sec_note = (diff.get("security_note", "") or "").lower()
+    combined = desc_lower + " " + sec_note
 
     if state_id.endswith(".*") or "stub" in desc_lower:
         return "CRITICAL"
     if "missing in" in desc_lower and "state category" in desc_lower:
         return "CRITICAL"
 
-    minor_keywords = [
-        "present in", "but no equivalent", "not present in other",
-        "granularity", "not explicitly", "implicitly",
+    # Safety-critical keywords → CRITICAL
+    critical_kw = ["slashing", "slashable", "consensus split", "finality", "accepts", "rejects"]
+    if any(kw in combined for kw in critical_kw):
+        return "CRITICAL"
+
+    # Security-relevant → MAJOR
+    major_kw = [
+        "ban", "peer penalty", "penalize", "eclipse",
+        "stall", "timeout", "dos", "liveness",
+        "reorg", "fork choice", "invalidat", "cascade",
+        "optimistic", "depth limit", "blob", "unique",
+        "only one client", "not explicitly", "absent",
+        "fundamental", "architectural", "not modeled",
     ]
-    if any(kw in desc_lower for kw in minor_keywords):
-        return "MINOR"
-    return "MAJOR"
+    if any(kw in combined for kw in major_kw):
+        return "MAJOR"
+
+    return "MINOR"
 
 
 # Canonical severity values.
@@ -351,6 +364,7 @@ def _deduplicate_b_diffs(b_diffs: list[dict]) -> list[dict]:
         merged_clients: set[str] = set()
         merged_deviating: set[str] = set()
         descriptions: list[str] = []
+        security_notes: list[str] = []
         best_severity = "MINOR"
         evidence: dict = {}
         severity_rank = {"CRITICAL": 3, "MAJOR": 2, "MINOR": 1, "": 0}
@@ -365,6 +379,9 @@ def _deduplicate_b_diffs(b_diffs: list[dict]) -> list[dict]:
             if desc and desc not in seen_descs:
                 descriptions.append(desc)
                 seen_descs.add(desc)
+            sec = e.get("security_note", "")
+            if sec and sec not in security_notes:
+                security_notes.append(sec)
             sev = _normalize_severity(e)
             if severity_rank.get(sev, 0) > severity_rank.get(best_severity, 0):
                 best_severity = sev
@@ -380,6 +397,7 @@ def _deduplicate_b_diffs(b_diffs: list[dict]) -> list[dict]:
             "severity": best_severity,
             "involved_clients": sorted(merged_clients),
             "deviating_clients": sorted(merged_deviating),
+            "security_note": " | ".join(security_notes) if security_notes else "",
             "evidence": evidence,
         })
 
@@ -394,21 +412,31 @@ def _generate_executive_summary(
     agreement_wfs: list[str],
     force_stopped: bool,
 ) -> str:
-    """Generate a human-readable executive summary paragraph."""
+    """Generate a human-readable executive summary paragraph (security-focused)."""
     total_a = len(a_diffs)
     total_b = len(b_diffs)
     total = total_a + total_b
 
+    sev_counts = Counter(d.get("severity", "MAJOR") for d in b_diffs)
+    n_critical = sev_counts.get("CRITICAL", 0)
+    n_major = sev_counts.get("MAJOR", 0)
+
     parts: list[str] = []
 
     parts.append(
-        f"This report compares {len(CLIENT_NAMES)} Ethereum consensus clients "
-        f"({', '.join(CLIENT_NAMES)}) across {len(WORKFLOW_IDS)} core workflows. "
+        f"This security-focused audit compares {len(CLIENT_NAMES)} Ethereum consensus "
+        f"clients ({', '.join(CLIENT_NAMES)}) across {len(WORKFLOW_IDS)} core workflows. "
         f"A total of **{total}** differences were identified: "
-        f"**{total_a}** A-class (vocabulary/naming misalignment, auto-resolved) "
-        f"and **{total_b}** B-class (genuine structural/logic divergences "
-        f"requiring human review)."
+        f"**{total_a}** A-class (vocabulary/naming, auto-resolved) "
+        f"and **{total_b}** B-class (structural logic divergences)."
     )
+
+    if n_critical > 0 or n_major > 0:
+        parts.append(
+            f"**Security assessment**: {n_critical} CRITICAL and {n_major} MAJOR "
+            f"findings with potential security implications (eclipse attacks, DoS "
+            f"vectors, consensus divergences)."
+        )
 
     if agreement_wfs:
         parts.append(
@@ -429,8 +457,7 @@ def _generate_executive_summary(
         dev_count = most_unique.get("b_class_deviating", most_unique["b_class"])
         parts.append(
             f"The client with the most unique implementation choices is "
-            f"**{most_unique['client']}** (deviating in {dev_count} B-class diffs, "
-            f"involved in {most_unique['total']} total diffs)."
+            f"**{most_unique['client']}** (deviating in {dev_count} B-class diffs)."
         )
 
     if force_stopped:
@@ -597,9 +624,9 @@ def write_diff_report(state: dict[str, Any]) -> Path:
         ])
 
         severity_order = [
-            ("CRITICAL", "🔴 Critical — Missing Workflows / State Categories"),
-            ("MAJOR", "🟠 Major — Behavioral Divergences"),
-            ("MINOR", "🟡 Minor — Extra/Missing Transitions, Granularity Differences"),
+            ("CRITICAL", "🔴 Critical — Missing Safety Guards / Consensus-Splitting Divergences"),
+            ("MAJOR", "🟠 Major — Exploitable Asymmetries (Eclipse, DoS, Chain-Split Vectors)"),
+            ("MINOR", "🟡 Minor — Architectural Differences with Limited Attack Surface"),
         ]
         b_idx = 1
         for sev_key, sev_label in severity_order:
@@ -617,11 +644,20 @@ def write_diff_report(state: dict[str, Any]) -> Path:
                 )
                 lines.append("")
                 lines.append(f"- **Guard**: `{diff.get('transition_guard', '?')}`")
+                deviating = diff.get("deviating_clients", [])
+                if deviating:
+                    lines.append(
+                        f"- **Deviating client(s)**: "
+                        f"{', '.join(deviating)}"
+                    )
                 lines.append(
-                    f"- **Clients involved**: "
+                    f"- **All clients involved**: "
                     f"{', '.join(diff.get('involved_clients', []))}"
                 )
                 lines.append(f"- **Description**: {diff.get('description', '')}")
+                sec_note = diff.get("security_note", "")
+                if sec_note:
+                    lines.append(f"- **⚠️ Security Note**: {sec_note}")
                 evidence = diff.get("evidence", {})
                 if evidence:
                     lines.append("- **Evidence**:")

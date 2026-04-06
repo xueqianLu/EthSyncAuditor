@@ -389,7 +389,7 @@ class TestWriter:
 
         # Empty/missing falls back to heuristic
         assert _normalize_severity({"severity": "", "state_id": "x.*"}) == "CRITICAL"
-        assert _normalize_severity({"severity": None, "description": "some diff"}) == "MAJOR"
+        assert _normalize_severity({"severity": None, "description": "some diff"}) == "MINOR"
 
     def test_write_diff_report_severity_normalization(self):
         """Non-standard severity values are normalized in the final report."""
