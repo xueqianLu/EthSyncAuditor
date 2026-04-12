@@ -1,7 +1,8 @@
 """EthAuditor — Phase 2 Sub-Agent.
 
-ReAct agent that extracts the complete LSG (7 workflows) for a single client,
-using call-graph directed hybrid search (Mode B).
+Extracts a **single workflow** LSG for one client using call-graph directed
+hybrid search (Mode B).  The workflow to extract is specified by
+``state["current_workflow"]``.
 """
 
 from __future__ import annotations
@@ -11,11 +12,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import yaml
 from jinja2 import Template
 
-from config import LANGUAGE_GRAMMARS, WORKFLOW_IDS
+from config import LANGUAGE_GRAMMARS
 from state import LSGFile
-from utils import invoke_with_retry, serialize_lsg_compact, summarize_vocab_for_prompt
+from utils import invoke_with_retry, summarize_vocab_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -26,62 +28,45 @@ def _load_prompt_template() -> Template:
     return Template(_PROMPT_PATH.read_text(encoding="utf-8"))
 
 
-def _collect_referenced_names(workflows: list[dict]) -> tuple[set[str], set[str]]:
-    """Scan workflows and return (guard_names, action_names) actually referenced."""
-    guard_names: set[str] = set()
-    action_names: set[str] = set()
-    for wf in workflows:
-        for st in wf.get("states", []):
-            for tr in st.get("transitions", []):
-                g = tr.get("guard", "")
-                if g and g != "TRUE":
-                    guard_names.add(g)
-                for a in tr.get("actions", []):
-                    if a:
-                        action_names.add(a)
-    return guard_names, action_names
+def _extract_workflow(lsg: dict, wf_id: str) -> dict | None:
+    """Extract a single workflow dict from a full LSG dict."""
+    for wf in lsg.get("workflows", []):
+        if wf.get("id") == wf_id:
+            return wf
+    return None
 
 
-def _backfill_vocab(
-    lsg_dict: dict,
-    global_guards: list[dict],
-    global_actions: list[dict],
-) -> None:
-    """Populate ``guards``/``actions`` in *lsg_dict* from the global vocabulary.
+def _replace_workflow(lsg: dict, wf_id: str, new_wf: dict) -> dict:
+    """Return a copy of *lsg* with the workflow *wf_id* replaced by *new_wf*."""
+    updated = dict(lsg)
+    new_workflows = []
+    replaced = False
+    for wf in lsg.get("workflows", []):
+        if wf.get("id") == wf_id:
+            new_workflows.append(new_wf)
+            replaced = True
+        else:
+            new_workflows.append(wf)
+    if not replaced:
+        new_workflows.append(new_wf)
+    updated["workflows"] = new_workflows
+    return updated
 
-    If the LLM already returned non-empty guards/actions, keep them.
-    Otherwise, filter the global vocabulary down to only those names that
-    appear in the client's workflow transitions — producing a meaningful
-    per-client vocabulary rather than duplicating the entire global set.
-    """
-    if lsg_dict.get("guards") and lsg_dict.get("actions"):
-        return  # LLM already populated them
 
-    ref_guards, ref_actions = _collect_referenced_names(
-        lsg_dict.get("workflows", []),
-    )
-
-    if not lsg_dict.get("guards") and global_guards:
-        lsg_dict["guards"] = [
-            g for g in global_guards
-            if g.get("name") in ref_guards
-        ]
-        logger.debug(
-            "Backfilled %d/%d guards for %s",
-            len(lsg_dict["guards"]), len(ref_guards),
-            lsg_dict.get("client", "?"),
-        )
-
-    if not lsg_dict.get("actions") and global_actions:
-        lsg_dict["actions"] = [
-            a for a in global_actions
-            if a.get("name") in ref_actions
-        ]
-        logger.debug(
-            "Backfilled %d/%d actions for %s",
-            len(lsg_dict["actions"]), len(ref_actions),
-            lsg_dict.get("client", "?"),
-        )
+def _serialize_workflow_yaml(wf: dict) -> str:
+    """Serialize a single workflow dict to compact YAML."""
+    # Strip evidence to save tokens
+    wf_copy = dict(wf)
+    new_states = []
+    for st in wf_copy.get("states", []):
+        st_copy = dict(st)
+        new_trans = []
+        for tr in st_copy.get("transitions", []):
+            new_trans.append({k: v for k, v in tr.items() if k != "evidence"})
+        st_copy["transitions"] = new_trans
+        new_states.append(st_copy)
+    wf_copy["states"] = new_states
+    return yaml.dump(wf_copy, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
 def build_phase2_sub_agent(client_name: str, llm=None, callbacks=None):
@@ -92,41 +77,50 @@ def build_phase2_sub_agent(client_name: str, llm=None, callbacks=None):
     lang_key, _ = LANGUAGE_GRAMMARS[client_name]
 
     def _run(state: dict[str, Any]) -> dict[str, Any]:
-        """Extract complete LSG from client source code."""
+        """Extract a single workflow from client source code."""
         guards = state.get("guards", [])
         actions = state.get("actions", [])
         iteration = state.get("phase2_iteration", 1)
+        current_wf = state.get("current_workflow", "")
 
-        # ── Filter A-class feedback to this client only ─────────────────
-        # A-class feedback contains vocabulary alignment directives from
-        # the Main Agent.  Only pass directives relevant to *this* client
-        # so the agent knows which guard/action names to rename.
+        # ── Get existing full LSG for this client ───────────────────────
+        existing_lsg = state.get("client_lsgs", {}).get(client_name, {})
+
+        # ── Filter A-class feedback to this client + workflow ───────────
         all_feedback = state.get("a_class_feedback", [])
         a_class_feedback = [
             fb for fb in all_feedback
             if client_name in fb.get("involved_clients", [])
+            and fb.get("workflow_id") == current_wf
         ]
 
-        # ── Compact vocabulary summary (avoid token overflow) ───────────
+        # ── Compact vocabulary summary ──────────────────────────────────
         vocab = summarize_vocab_for_prompt(guards, actions, max_full_entries=80)
 
-        # ── Previous-iteration LSG for incremental refinement ───────────
-        previous_lsg_yaml: str | None = None
-        prev_lsg = state.get("client_lsgs", {}).get(client_name)
-        if prev_lsg and iteration > 1:
-            previous_lsg_yaml = serialize_lsg_compact(
-                prev_lsg, strip_evidence=True,
-            )
+        # ── Previous iteration's workflow for incremental refinement ────
+        previous_wf_yaml: str | None = None
+        prev_wf = _extract_workflow(existing_lsg, current_wf)
+        if prev_wf and iteration > 1:
+            previous_wf_yaml = _serialize_workflow_yaml(prev_wf)
             logger.info(
-                "[phase2_sub_agent] client=%s — feeding back previous LSG "
-                "(%d lines) for incremental refinement",
-                client_name, previous_lsg_yaml.count("\n"),
+                "[phase2_sub_agent] client=%s wf=%s — feeding back previous "
+                "workflow (%d lines)",
+                client_name, current_wf, previous_wf_yaml.count("\n"),
+            )
+        elif prev_wf and iteration == 1:
+            # First iteration: show merged baseline as reference
+            previous_wf_yaml = _serialize_workflow_yaml(prev_wf)
+            logger.info(
+                "[phase2_sub_agent] client=%s wf=%s — using merged baseline "
+                "(%d lines)",
+                client_name, current_wf, previous_wf_yaml.count("\n"),
             )
 
-        # ── Sparsity hints (which workflows need expansion) ─────────────
+        # ── Sparsity hints for this workflow ────────────────────────────
         sparsity_hints = [
             h for h in state.get("sparsity_hints", [])
             if h.get("client") == client_name
+            and h.get("workflow_id") == current_wf
         ]
 
         template = _load_prompt_template()
@@ -134,8 +128,9 @@ def build_phase2_sub_agent(client_name: str, llm=None, callbacks=None):
             client_name=client_name,
             language=lang_key,
             vocab=vocab,
+            workflow_id=current_wf,
             a_class_feedback=a_class_feedback,
-            previous_lsg_yaml=previous_lsg_yaml,
+            previous_wf_yaml=previous_wf_yaml,
             iteration=iteration,
             sparsity_hints=sparsity_hints,
         )
@@ -144,56 +139,75 @@ def build_phase2_sub_agent(client_name: str, llm=None, callbacks=None):
             try:
                 chain = llm.with_structured_output(LSGFile)
                 lsg: LSGFile = invoke_with_retry(
-                    chain, _prompt, label=f"phase2_sub/{client_name}",
+                    chain, _prompt, label=f"phase2_sub/{client_name}/{current_wf}",
                     callbacks=callbacks,
                 )
                 lsg_dict = lsg.model_dump()
-                # LLM often returns empty guards/actions — backfill from
-                # global vocabulary filtered to names referenced in workflows.
-                _backfill_vocab(lsg_dict, guards, actions)
-                return {"client_lsgs": {client_name: lsg_dict}}
+                # Extract the target workflow from LLM output
+                new_wf = _extract_workflow(lsg_dict, current_wf)
+                if new_wf is None and lsg_dict.get("workflows"):
+                    # LLM might return it as the only workflow
+                    new_wf = lsg_dict["workflows"][0]
+                    new_wf["id"] = current_wf  # ensure correct id
+
+                if new_wf:
+                    updated_lsg = _replace_workflow(existing_lsg, current_wf, new_wf)
+                    updated_lsg["generated_at"] = datetime.now(timezone.utc).isoformat()
+                    return {"client_lsgs": {client_name: updated_lsg}}
+
+                logger.warning(
+                    "[phase2_sub_agent] LLM returned no workflow for %s/%s",
+                    client_name, current_wf,
+                )
             except Exception:
-                logger.error("LLM call failed for %s", client_name, exc_info=True)
+                logger.error(
+                    "LLM call failed for %s/%s", client_name, current_wf,
+                    exc_info=True,
+                )
 
-        # Mock fallback
-        logger.info("[phase2_sub_agent] client=%s — using mock response", client_name)
-        workflows = []
-        for wf_id in WORKFLOW_IDS:
-            workflows.append({
-                "id": wf_id,
-                "name": wf_id.replace("_", " ").title(),
-                "description": f"Mock {wf_id} workflow for {client_name}",
-                "mode": "mock",
-                "initial_state": f"{wf_id}.init",
-                "states": [
-                    {
-                        "id": f"{wf_id}.init",
-                        "label": "Init",
-                        "category": "init",
-                        "transitions": [{
-                            "guard": "TRUE",
-                            "actions": [],
-                            "next_state": f"{wf_id}.done",
-                            "evidence": None,
-                        }],
-                    },
-                    {
-                        "id": f"{wf_id}.done",
-                        "label": "Done",
-                        "category": "terminal",
-                        "transitions": [],
-                    },
-                ],
-            })
-
-        lsg_dict = {
-            "version": 1,
-            "client": client_name,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "guards": list(guards),
-            "actions": list(actions),
-            "workflows": workflows,
+        # ── Mock fallback ───────────────────────────────────────────────
+        logger.info(
+            "[phase2_sub_agent] client=%s wf=%s — using mock response",
+            client_name, current_wf,
+        )
+        mock_wf = {
+            "id": current_wf,
+            "name": current_wf.replace("_", " ").title(),
+            "description": f"Mock {current_wf} workflow for {client_name}",
+            "mode": "mock",
+            "initial_state": f"{current_wf}.init",
+            "states": [
+                {
+                    "id": f"{current_wf}.init",
+                    "label": "Init",
+                    "category": "init",
+                    "transitions": [{
+                        "guard": "TRUE",
+                        "actions": [],
+                        "next_state": f"{current_wf}.done",
+                        "evidence": None,
+                    }],
+                },
+                {
+                    "id": f"{current_wf}.done",
+                    "label": "Done",
+                    "category": "terminal",
+                    "transitions": [],
+                },
+            ],
         }
-        return {"client_lsgs": {client_name: lsg_dict}}
+
+        if existing_lsg:
+            updated_lsg = _replace_workflow(existing_lsg, current_wf, mock_wf)
+        else:
+            updated_lsg = {
+                "version": 1,
+                "client": client_name,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "guards": list(guards),
+                "actions": list(actions),
+                "workflows": [mock_wf],
+            }
+        return {"client_lsgs": {client_name: updated_lsg}}
 
     return _run

@@ -1,0 +1,3125 @@
+version: 1
+client: lighthouse
+generated_at: '2026-04-09T16:37:21.028756+00:00'
+guards:
+- name: ExecutionEngineCircuitBreakerIsOpen
+  category: exec
+  description: The circuit breaker for the Engine API is open, preventing new requests
+    from being sent to the execution client to allow it time to recover.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ExecutionEngineFailureThresholdReached
+  category: exec
+  description: The number of consecutive failed requests to the execution engine has
+    exceeded a configured threshold, triggering the circuit breaker.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ExecutionPayloadReady
+  category: exec
+  description: Checks if the execution layer has successfully built and returned an
+    execution payload.
+  evidence_file: beacon_node/engine_api/src/engine_api.rs
+  evidence_function: is_execution_payload_ready
+  evidence_lines:
+  - 1
+  - 1
+- name: ExecutionPayloadStatusIsInvalid
+  category: exec
+  description: The execution client has returned an INVALID status for a payload,
+    indicating it is malformed or violates state rules.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ExecutionPayloadStatusIsSyncing
+  category: exec
+  description: The execution client has indicated that it is currently syncing and
+    cannot fully validate a payload, potentially allowing for optimistic import.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ExecutionPayloadStatusIsValid
+  category: exec
+  description: The execution client has returned a VALID status for a payload, confirming
+    it is well-formed, follows all execution rules, and can be made canonical.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: HasAggregatorDuties
+  category: validator
+  description: Determines if the validator has been assigned a responsibility to aggregate
+    attestations.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: HasAttesterDuties
+  category: validator
+  description: Checks if the validator has any attester duties assigned for the current
+    epoch.
+  evidence_file: validator_client/src/duty_service.rs
+  evidence_function: has_attester_duties
+  evidence_lines:
+  - 1
+  - 1
+- name: HasIndividualAttestationsForAggregation
+  category: attestation
+  description: Checks if there are any individual attestations collected that can
+    be aggregated for the current slot.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: HasProposerDuties
+  category: validator
+  description: Checks if the validator has any proposer duties assigned for the current
+    epoch.
+  evidence_file: validator_client/src/duty_service.rs
+  evidence_function: has_proposer_duties
+  evidence_lines:
+  - 1
+  - 1
+- name: HasSufficientSyncPeers
+  category: peer
+  description: Determines if there are enough connected and suitable peers to proceed
+    with synchronization.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsAggregateSlashingProtected
+  category: validator
+  description: Checks if signing an aggregate and proof would violate slashing conditions
+    for a given validator.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsAggregatorForSubnet
+  category: committee
+  description: Determines if the validator is selected as an aggregator for a specific
+    attestation subnet in the current slot based on VRF, or if it has been selected
+    for the current slot and committee.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsAttestationCommitteeAvailable
+  category: validator
+  description: Checks if the validator has been assigned to an attestation committee
+    for the current slot.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsAttestationConstructionSuccessful
+  category: attestation
+  description: Checks if the process of constructing the attestation data was successful
+    without errors.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsBackfillCompleted
+  category: sync
+  description: Checks if the backfilling of historical blocks from the checkpoint
+    to genesis is finished.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsBackfillNeeded
+  category: sync
+  description: Determines if historical blocks need to be backfilled after checkpoint
+    sync.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsBlockBodyComplete
+  category: block
+  description: Checks if all required components of the block body (attestations,
+    sync aggregate, EL payload, etc.) are ready for assembly.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsBlockFound
+  category: block
+  description: Checks if a block has been successfully found during a lookup request.
+  evidence_file: beacon_node/lighthouse_sync/src/block_lookups.rs
+  evidence_function: is_block_found
+  evidence_lines:
+  - 1
+  - 1
+- name: IsBlockImportedSuccessfully
+  category: block
+  description: Checks if a block was successfully imported into the blockchain without
+    errors.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsBlockInvalid
+  category: block
+  description: Checks if a beacon block is considered invalid by consensus rules.
+  evidence_file: beacon_node/beacon_chain/src/block_processor.rs
+  evidence_function: is_block_invalid
+  evidence_lines:
+  - 1
+  - 1
+- name: IsBlockLookupRequestStalled
+  category: peer
+  description: Checks if a block lookup request to a peer has timed out or is unresponsive.
+  evidence_file: beacon_node/lighthouse_sync/src/block_lookups.rs
+  evidence_function: is_block_lookup_request_stalled
+  evidence_lines:
+  - 1
+  - 1
+- name: IsBlockOptimistic
+  category: block
+  description: Checks if a specific block is currently marked as optimistically imported.
+  evidence_file: beacon_node/beacon_chain/src/block_processor.rs
+  evidence_function: is_block_optimistic
+  evidence_lines:
+  - 1
+  - 1
+- name: IsBlockParentMismatchInBatch
+  category: validation
+  description: Checks if a block in a range sync batch does not link correctly to
+    the previous block.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsBlockParentMissing
+  category: block
+  description: Determines if a received block's parent is not present in the local
+    chain.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsBlockProductionTime
+  category: time
+  description: The node has reached the beginning of a slot for which it is the designated
+    block proposer.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsBlockResponseEmpty
+  category: validation
+  description: Checks if a block response from a peer was empty when blocks were expected.
+  evidence_file: beacon_node/lighthouse_sync/src/manager/range_sync.rs
+  evidence_function: is_block_response_empty
+  evidence_lines:
+  - 1
+  - 1
+- name: IsBlockResponseInvalid
+  category: validation
+  description: Checks if a block response is invalid (e.g., blocks not contiguous,
+    incorrect range).
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsBlockTemporarilyInvalid
+  category: block
+  description: Checks if a block is temporarily invalid due to a transient issue (e.g.,
+    missing EL payload).
+  evidence_file: beacon_node/beacon_chain/src/block_processor.rs
+  evidence_function: is_block_temporarily_invalid
+  evidence_lines:
+  - 1
+  - 1
+- name: IsCheckpointSyncEnabled
+  category: mode
+  description: Determines if the checkpoint sync feature is activated in the node's
+    configuration.
+  evidence_file: beacon_node/lighthouse_sync/src/manager/mod.rs
+  evidence_function: is_checkpoint_sync_enabled
+  evidence_lines:
+  - 1
+  - 1
+- name: IsExecutionClientConnected
+  category: exec
+  description: Checks if the Beacon Node has an active connection to the Execution
+    Layer client.
+  evidence_file: beacon_node/engine_api/src/engine_api.rs
+  evidence_function: is_execution_client_connected
+  evidence_lines:
+  - 1
+  - 1
+- name: IsExecutionPayloadRequired
+  category: exec
+  description: Determines if an execution payload is required for the current block
+    or operation.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsForkchoiceUpdateSuccessful
+  category: fork
+  description: Checks if the `engine_forkchoiceUpdated` call to the execution layer
+    was successful.
+  evidence_file: beacon_node/engine_api/src/engine_api.rs
+  evidence_function: is_forkchoice_update_successful
+  evidence_lines:
+  - 1
+  - 1
+- name: IsGossipBlockAlreadySeen
+  category: validation
+  description: Checks if a gossip message with the same ID has already been processed.
+  evidence_file: beacon_node/beacon_chain/src/gossip_block_processor.rs
+  evidence_function: is_gossip_block_already_seen
+  evidence_lines:
+  - 1
+  - 1
+- name: IsGossipBlockFuture
+  category: time
+  description: Checks if a gossip block's slot is in the future relative to the current
+    slot.
+  evidence_file: beacon_node/beacon_chain/src/gossip_block_processor.rs
+  evidence_function: is_gossip_block_future
+  evidence_lines:
+  - 1
+  - 1
+- name: IsGossipBlockTooOld
+  category: time
+  description: Checks if a gossip block is from a slot too far in the past to be considered
+    for current chain operations.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsGossipBlockValid
+  category: validation
+  description: Checks if a received gossip block is valid for initial processing based
+    on various criteria like slot, parent, and uniqueness.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsGossipMessageRateLimited
+  category: validation
+  description: Checks if a specific peer or message type is currently subject to rate
+    limiting to prevent abuse.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsInitialSyncMode
+  category: sync
+  description: Checks if the node is currently operating in initial synchronization
+    mode.
+  evidence_file: beacon_node/lighthouse_sync/src/manager/mod.rs
+  evidence_function: is_initial_sync_mode
+  evidence_lines:
+  - 1
+  - 1
+- name: IsNodeShuttingDown
+  category: other
+  description: Checks if the node is in the process of shutting down, preventing new
+    operations.
+  evidence_file: beacon_node/lighthouse_sync/src/manager/mod.rs
+  evidence_function: is_node_shutting_down
+  evidence_lines:
+  - 1
+  - 1
+- name: IsRangeSyncBlockOrderInvalid
+  category: validation
+  description: Checks if blocks in a range sync response are not strictly increasing
+    by slot.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsRangeSyncRequestTimedOut
+  category: sync
+  description: Checks if a pending range sync request has exceeded its allowed time
+    limit without a response from the peer.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsRangeSyncResponseSuccessful
+  category: validation
+  description: Checks if a range sync RPC response was successful (no errors, valid
+    status).
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsReadyForAttestationProduction
+  category: time
+  description: Verifies if the current slot has progressed sufficiently (past 4 seconds)
+    to produce an attestation.
+  evidence_file: validator_client/src/attestation_service.rs
+  evidence_function: is_ready_for_attestation_production
+  evidence_lines:
+  - 1
+  - 1
+- name: IsSyncTargetReached
+  category: sync
+  description: Checks if the local chain head has reached the network's target slot
+    or epoch during initial sync.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsValidatorKeyAvailable
+  category: validator
+  description: Checks if the BLS signing key for a validator is loaded and available
+    for signing operations.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsValidatorKeyPresentForProposer
+  category: validator
+  description: Checks if the validator's signing key is available for block proposal.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: OptimisticSyncDepthExceedsLimit
+  category: sync
+  description: The number of blocks or epochs imported optimistically without full
+    execution validation exceeds a configured safety limit.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ShouldAggregateAttestations
+  category: time
+  description: Determines if it is the correct time for a validator to aggregate attestations
+    for the current slot.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ShouldFallBackToRangeSync
+  category: sync
+  description: Checks if the node's current chain head is sufficiently behind the
+    network's head to trigger a fallback to range synchronization.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SufficientAttestationsForAggregation
+  category: committee
+  description: Determines if a sufficient number of individual attestations have been
+    gathered to create a valid aggregate attestation.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+actions:
+- name: AddGossipBlockToCache
+  category: block
+  description: Adds a gossip block to a temporary cache, typically for future or missing
+    parent blocks.
+  evidence_file: beacon_node/beacon_chain/src/gossip_block_processor.rs
+  evidence_function: add_gossip_block_to_cache
+  evidence_lines:
+  - 1
+  - 1
+- name: AdvanceStateWithBlock
+  category: state
+  description: Applies a valid block to the current state, executing its state transitions
+    to produce the post-state.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ApplyBlocks
+  category: block
+  description: Applies a list of validated blocks to the node's state, updating the
+    fork choice and historical blocks.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ApplyGossipRateLimiting
+  category: network
+  description: Applies rate limiting rules to incoming gossip messages or peers.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: AssembleBeaconBlock
+  category: block
+  description: A block proposer combines the execution payload, blob KZG commitments,
+    attestations, and other operational data into a complete BeaconBlock structure
+    before signing.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: BackfillHistoricalBlocks
+  category: sync
+  description: Downloads and processes historical blocks from genesis up to a checkpoint
+    after a successful forward sync.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: CacheBlockForFutureProcessing
+  category: block
+  description: Stores a block in a temporary cache when it cannot be immediately processed,
+    e.g., due to a missing parent.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: CallEngineForkchoiceUpdatedV3
+  category: exec
+  description: Calls the Engine API method 'engine_forkchoiceUpdatedV3' on the execution
+    client.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: CallEngineGetPayloadV3
+  category: exec
+  description: Calls the Engine API method 'engine_getPayloadV3' on the execution
+    client.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: CheckAndInsertAttestationSlashingProtection
+  category: validator
+  description: Checks the slashing protection database for attestation conflicts and
+    inserts the new attestation if safe.
+  evidence_file: validator_client/src/slashing_protection.rs
+  evidence_function: check_and_insert_attestation_slashing_protection
+  evidence_lines:
+  - 1
+  - 1
+- name: CheckAndInsertBlockSlashingProtection
+  category: validator
+  description: Checks the slashing protection database for block conflicts and inserts
+    the new block if safe.
+  evidence_file: validator_client/src/slashing_protection.rs
+  evidence_function: check_and_insert_block_slashing_protection
+  evidence_lines:
+  - 1
+  - 1
+- name: ClearCollectedAttestations
+  category: attestation
+  description: Empties the internal pool of collected individual attestations after
+    an aggregation event or slot transition.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: CollectIndividualAttestations
+  category: attestation
+  description: Collects individual attestations from the assigned attestation subnet.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: CombineAttestationSignatures
+  category: attestation
+  description: Combines multiple individual BLS signatures from attestations into
+    a single aggregate BLS signature and forms an `AggregateAndProof` object.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: CombineAttestationsIntoAggregate
+  category: attestation
+  description: Combines multiple individual attestations into a single AggregateAndProof
+    object.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: CommitState
+  category: state
+  description: Commits the current beacon state to persistent storage.
+  evidence_file: beacon_node/beacon_chain/src/beacon_chain.rs
+  evidence_function: commit_state
+  evidence_lines:
+  - 1
+  - 1
+- name: DropGossipMessage
+  category: network
+  description: Silently discards an incoming gossip message (such as an attestation
+    or block) that evaluates to IGNORE during basic validation, avoiding unnecessary
+    processing or penalization.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: EnqueueBlockForProcessing
+  category: block
+  description: Adds a block to the queue for asynchronous processing (validation and
+    import).
+  evidence_file: beacon_node/beacon_chain/src/block_processor.rs
+  evidence_function: enqueue_block_for_processing
+  evidence_lines:
+  - 1
+  - 1
+- name: ExitOptimisticSync
+  category: sync
+  description: The node transitions from optimistic sync back to regular operation
+    after the execution client signals it has finished its own sync or a safety limit
+    is reached.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ExitOptimisticSyncMode
+  category: mode
+  description: Deactivates optimistic sync mode once the execution layer client has
+    caught up and is fully synced.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FailCheckpointVerification
+  category: sync
+  description: Handles a failed checkpoint verification, potentially leading to a
+    retry or exit.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FetchAggregatorDuties
+  category: validator
+  description: Retrieves the aggregator duties assigned to the validator for upcoming
+    slots.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FetchAttestationData
+  category: network
+  description: Requests the required attestation data from the beacon node API, including
+    the head block root, source checkpoint, and target checkpoint, to build a new
+    unaggregated attestation.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FetchAttesterDuties
+  category: validator
+  description: A validator requests its attestation duties for a specific epoch from
+    the beacon node to determine which slot and committee it has been assigned.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FetchBlobSidecarsForBlock
+  category: block
+  description: Fetches pending blob sidecars to include in the proposed block (Deneb).
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FetchBlsToExecutionChangesForBlock
+  category: validator
+  description: Fetches pending BLS to execution changes to be included in a proposed
+    block.
+  evidence_file: beacon_node/beacon_chain/src/block_proposer.rs
+  evidence_function: fetch_bls_to_execution_changes_for_block
+  evidence_lines:
+  - 1
+  - 1
+- name: FetchCheckpointBlockAndState
+  category: sync
+  description: Fetches both the checkpoint block and its corresponding state from
+    peers or the beacon API, handling retries and peer selection.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FetchCheckpointFromAPI
+  category: sync
+  description: Fetches a checkpoint from a trusted Beacon API endpoint.
+  evidence_file: beacon_node/lighthouse_sync/src/manager/checkpoint_sync.rs
+  evidence_function: fetch_checkpoint_from_api
+  evidence_lines:
+  - 1
+  - 1
+- name: FetchCheckpointFromPeers
+  category: sync
+  description: Fetches checkpoint block and state from connected peers.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FetchDepositsForBlock
+  category: block
+  description: Fetches pending deposits to be included in a proposed block.
+  evidence_file: beacon_node/beacon_chain/src/block_proposer.rs
+  evidence_function: fetch_deposits_for_block
+  evidence_lines:
+  - 1
+  - 1
+- name: FetchProposerDuties
+  category: validator
+  description: A validator requests its block proposer duties for an epoch from the
+    beacon node to determine for which slot it is scheduled to propose a block.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FetchSlashingsForBlock
+  category: validator
+  description: Fetches pending slashings to be included in a proposed block.
+  evidence_file: beacon_node/beacon_chain/src/block_proposer.rs
+  evidence_function: fetch_slashings_for_block
+  evidence_lines:
+  - 1
+  - 1
+- name: FetchVoluntaryExitsForBlock
+  category: validator
+  description: Fetches pending voluntary exits to be included in a proposed block.
+  evidence_file: beacon_node/beacon_chain/src/block_proposer.rs
+  evidence_function: fetch_voluntary_exits_for_block
+  evidence_lines:
+  - 1
+  - 1
+- name: FetchWithdrawalsForBlock
+  category: validator
+  description: Fetches pending withdrawals to be included in a proposed block.
+  evidence_file: beacon_node/beacon_chain/src/block_proposer.rs
+  evidence_function: fetch_withdrawals_for_block
+  evidence_lines:
+  - 1
+  - 1
+- name: FinalizeSyncProgress
+  category: sync
+  description: Marks the sync process as complete and performs cleanup.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FindSyncPeer
+  category: peer
+  description: Selects an appropriate peer to request blocks from during range synchronization,
+    considering current sync requests.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: GetAttestationHeadBlock
+  category: attestation
+  description: Retrieves the head block that the attestation should vote for from
+    the current chain state.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: GetExecutionPayload
+  category: exec
+  description: Requests and retrieves a built execution payload from the Execution
+    Layer, via an engine_getPayload Engine API call.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: GetValidatorCommitteeIndex
+  category: validator
+  description: Determines the committee index for the validator for the current slot.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: HandleAttestationSigningError
+  category: validator
+  description: Manages errors that occur during the signing of an attestation by a
+    validator.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: HandleBlockAssemblyError
+  category: block
+  description: Processes an error that occurs during the assembly of a beacon block,
+    possibly logging the failure and preventing publication.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: HandleBlockSigningError
+  category: validator
+  description: Manages errors that occur during the signing of a beacon block by a
+    proposer.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: HandleRangeSyncTimeout
+  category: sync
+  description: Manages the logic for a range synchronization request that has timed
+    out, potentially retrying or penalizing the peer.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IncAcceptedGossipBlocksMetric
+  category: other
+  description: Increments the metric counter for blocks successfully accepted from
+    gossip.
+  evidence_file: beacon_node/beacon_chain/src/metrics.rs
+  evidence_function: inc_accepted_gossip_blocks_metric
+  evidence_lines:
+  - 1
+  - 1
+- name: IncDuplicateGossipBlocksMetric
+  category: other
+  description: Increments the metric counter for duplicate blocks received from gossip.
+  evidence_file: beacon_node/beacon_chain/src/metrics.rs
+  evidence_function: inc_duplicate_gossip_blocks_metric
+  evidence_lines:
+  - 1
+  - 1
+- name: IncInvalidGossipBlocksMetric
+  category: other
+  description: Increments the metric counter for blocks deemed invalid from gossip.
+  evidence_file: beacon_node/beacon_chain/src/metrics.rs
+  evidence_function: inc_invalid_gossip_blocks_metric
+  evidence_lines:
+  - 1
+  - 1
+- name: IncRejectedGossipBlocksMetric
+  category: other
+  description: Increments the metric counter for blocks rejected from gossip for various
+    reasons.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IncrementCheckpointSyncAttempt
+  category: sync
+  description: Increments the internal counter for the number of attempts made during
+    checkpoint synchronization.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: InitializeForkChoiceFromCheckpoint
+  category: state
+  description: Initializes or resets the node's fork choice store using a trusted
+    finalized checkpoint block and state as the new anchor.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: InitializeSyncState
+  category: sync
+  description: Sets up the initial data structures and parameters for the node's synchronization
+    process.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: InvalidateBlock
+  category: state
+  description: Marks a single block as INVALID in the fork-choice store after receiving
+    INVALID status from the EL, distinguishing it from the cascade invalidation of
+    descendants.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: InvalidateBlockAndDescendants
+  category: fork
+  description: Recursively marks a block and all of its fork-choice descendants as
+    invalid and reverts the chain head after the execution engine declares its payload
+    INVALID.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: LogAttestationProduction
+  category: other
+  description: Logs the event of an attestation being successfully produced and signed.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: LogBlockProposalAttempt
+  category: other
+  description: Logs that an attempt to propose a block has been initiated by the validator.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: LogCheckpointSyncFailure
+  category: sync
+  description: Records details about a failure in the checkpoint synchronization process
+    for debugging.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: LogErrorMessage
+  category: other
+  description: Records an error message to the node's logging system.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: MarkCheckpointSyncComplete
+  category: sync
+  description: Marks the checkpoint synchronization as complete and transitions the
+    node to the next sync phase.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: MarkRangeSyncRequestFailed
+  category: sync
+  description: Marks a range sync request as failed due to an error or invalid response.
+  evidence_file: beacon_node/lighthouse_sync/src/manager/range_sync.rs
+  evidence_function: mark_range_sync_request_failed
+  evidence_lines:
+  - 1
+  - 1
+- name: MonitorAggregatorDuties
+  category: validator
+  description: Regularly queries the beacon chain for new or updated aggregator duties
+    for the validator.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: MonitorAttestationSubnet
+  category: network
+  description: Actively listens for incoming attestations on the subscribed attestation
+    subnet.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: MonitorExecutionPayloadBuilding
+  category: exec
+  description: Actively monitors the progress or status of the execution payload being
+    built by the EL.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: NotifyBlockProposalFailure
+  category: other
+  description: Notifies relevant systems about a failure in the block proposal process.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: NotifyExecutionClientOfForkChoiceUpdate
+  category: exec
+  description: Notifies the Execution Layer client about the current head, safe, and
+    finalized block hashes, optionally triggering payload building.
+  evidence_file: beacon_node/engine_api/src/engine_api.rs
+  evidence_function: notify_execution_client_of_fork_choice_update
+  evidence_lines:
+  - 1
+  - 1
+- name: OpenExecutionEngineCircuitBreaker
+  category: exec
+  description: After repeated failures to communicate with the execution engine, a
+    circuit breaker is opened, temporarily halting Engine API calls to allow the EL
+    to recover.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: PenalizePeer
+  category: peer
+  description: Decreases the reputation of a peer due to sync failures, invalid block
+    responses, timeouts, or propagating invalid gossip.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: PenalizePeerRangeSyncTimeout
+  category: peer
+  description: Applies a penalty to a peer specifically for range sync misbehavior.
+  evidence_file: beacon_node/lighthouse_sync/src/sync_peer_manager.rs
+  evidence_function: penalize_peer_range_sync_timeout
+  evidence_lines:
+  - 1
+  - 1
+- name: PenalizeRangeSyncPeer
+  category: peer
+  description: Penalizes a peer for failing to provide valid blocks during range sync.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: PrepareAggregateAndProof
+  category: attestation
+  description: Prepares the data structure for the AggregateAndProof by selecting
+    and combining the best individual attestations.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: PreparePayloadAttributes
+  category: exec
+  description: Constructs payload attributes (timestamp, prevRandao, suggestedFeeRecipient,
+    withdrawals) for the forkchoiceUpdated call that initiates EL payload building.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ProcessBackfilledBlockBatch
+  category: block
+  description: Processes a batch of blocks received during backfill synchronization.
+  evidence_file: beacon_node/lighthouse_sync/src/block_processor.rs
+  evidence_function: process_backfilled_block_batch
+  evidence_lines:
+  - 1
+  - 1
+- name: ProcessBeaconBlockInChain
+  category: block
+  description: Processes a beacon block, including validation, state transition, and
+    execution layer interaction.
+  evidence_file: beacon_node/beacon_chain/src/beacon_chain.rs
+  evidence_function: process_beacon_block_in_chain
+  evidence_lines:
+  - 1
+  - 1
+- name: ProcessCachedGossipBlock
+  category: block
+  description: Imports a block that was previously cached due to missing parents,
+    now that its dependencies are met.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ProcessRangeSyncBlockBatch
+  category: block
+  description: Processes a batch of blocks downloaded during range synchronization,
+    including validation and application.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ProduceAttestation
+  category: validator
+  description: Constructs an Attestation object with the correct data (source, target,
+    head votes) for the current slot and committee.
+  evidence_file: validator_client/src/attestation_producer.rs
+  evidence_function: produce_attestation
+  evidence_lines:
+  - 1
+  - 1
+- name: PublishAggregateAndProof
+  category: network
+  description: Broadcasts the locally computed aggregate attestation along with its
+    VRF selection proof to the global beacon_aggregate_and_proof gossip topic.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: PublishAttestation
+  category: network
+  description: Broadcasts a signed attestation to the Ethereum network via the beacon
+    node.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: PublishBlock
+  category: network
+  description: After a validator produces and signs a new beacon block, it is broadcast
+    to the network via the global `beacon_block` gossip topic.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: QueueGossipMessageForValidation
+  category: validation
+  description: Adds a raw gossip message to a queue for preliminary validation before
+    full processing.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RecordAggregateAndProofSlashingProtection
+  category: validator
+  description: Records the signed aggregate and proof in the slashing protection database
+    to prevent future slashing by the validator.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RecordAttestation
+  category: attestation
+  description: Records details about a successfully produced attestation.
+  evidence_file: validator_client/src/attestation_producer.rs
+  evidence_function: record_attestation
+  evidence_lines:
+  - 1
+  - 1
+- name: RecordGossipMessageId
+  category: other
+  description: Records the unique identifier of a gossip message to detect and prevent
+    reprocessing of duplicates.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RecordProducedBlock
+  category: block
+  description: Records details about a block successfully produced by the validator.
+  evidence_file: validator_client/src/block_service.rs
+  evidence_function: record_produced_block
+  evidence_lines:
+  - 1
+  - 1
+- name: RecordSkippedAttestationDuty
+  category: validator
+  description: Logs or records that an attestation duty for a validator was skipped,
+    perhaps due to an error or node being out of sync.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RemoveBlockFromProcessingQueue
+  category: block
+  description: Removes a block from the processing queue.
+  evidence_file: beacon_node/beacon_chain/src/block_processor.rs
+  evidence_function: remove_block_from_processing_queue
+  evidence_lines:
+  - 1
+  - 1
+- name: RemoveBlockLookupRequest
+  category: block
+  description: Removes a block lookup request from the pending queue after it has
+    been fulfilled or timed out.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ReportCheckpointSyncProgress
+  category: sync
+  description: Reports the current progress of the checkpoint synchronization process
+    to metrics or logs.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RequestBlockByRoot
+  category: network
+  description: Sends a BeaconBlocksByRoot RPC request to a peer to fetch a block by
+    its root.
+  evidence_file: beacon_node/eth2_libp2p/src/rpc/mod.rs
+  evidence_function: request_block_by_root
+  evidence_lines:
+  - 1
+  - 1
+- name: RequestBlocksByRange
+  category: network
+  description: Request a batch of blocks from a peer using a `BlocksByRange` RPC call
+    to advance the chain during initial sync.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RequestBlocksFromBestPeer
+  category: network
+  description: Requests blocks from the currently best-performing peer for synchronization.
+  evidence_file: beacon_node/lighthouse_sync/src/manager/mod.rs
+  evidence_function: request_blocks_from_best_peer
+  evidence_lines:
+  - 1
+  - 1
+- name: RequestMissingParentBlock
+  category: network
+  description: Initiates a BlocksByRoot request to fetch the missing parent of an
+    orphan block received via gossip.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RequestPayloadAttributes
+  category: exec
+  description: Requests the payload attributes from the execution layer for block
+    building.
+  evidence_file: beacon_node/engine_api/src/engine_api.rs
+  evidence_function: request_payload_attributes
+  evidence_lines:
+  - 1
+  - 1
+- name: RollbackForkChoiceToValidHead
+  category: fork
+  description: Following an INVALID payload status from the execution client, the
+    fork-choice head is reverted to the most recent ancestor block with a known VALID
+    payload.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ScheduleAggregationProduction
+  category: time
+  description: Schedules the production of an aggregate attestation to occur at the
+    appropriate time within the slot.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SendForkChoiceUpdateToExecutionClient
+  category: exec
+  description: Sends a forkchoiceUpdated message to the execution layer to inform
+    it of the current head, safe, and finalized blocks.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SendNewPayloadToExecutionClient
+  category: exec
+  description: The consensus client sends a engine_newPayload message (e.g., V3 with
+    blob versioned hashes) to the execution client to execute and validate a block.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SetBlockOptimistic
+  category: block
+  description: Marks a block as optimistically imported, awaiting full verification
+    by the execution layer.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SetCheckpointSyncFailureReason
+  category: sync
+  description: Records the reason for a checkpoint synchronization failure.
+  evidence_file: beacon_node/lighthouse_sync/src/manager/checkpoint_sync.rs
+  evidence_function: set_checkpoint_sync_failure_reason
+  evidence_lines:
+  - 1
+  - 1
+- name: SetGraffitiInBlock
+  category: block
+  description: Sets the graffiti field in the proposed beacon block's body.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SetTrustedCheckpoint
+  category: sync
+  description: Sets a trusted checkpoint for initial synchronization.
+  evidence_file: beacon_node/lighthouse_sync/src/manager/checkpoint_sync.rs
+  evidence_function: set_trusted_checkpoint
+  evidence_lines:
+  - 1
+  - 1
+- name: SignAggregateAndProof
+  category: validator
+  description: Generates a BLS signature over the locally combined aggregate attestation
+    to finalize the AggregateAndProof message before broadcasting.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SignAttestation
+  category: validator
+  description: The validator uses its private key to generate a BLS signature for
+    a newly created attestation data object after passing slashing protection checks.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SignAttestationWithWallet
+  category: validator
+  description: Signs an attestation using the validator's wallet, including slashing
+    protection.
+  evidence_file: validator_client/src/key_cache.rs
+  evidence_function: sign_attestation_with_wallet
+  evidence_lines:
+  - 1
+  - 1
+- name: SignBeaconBlock
+  category: validator
+  description: The validator signs the fully assembled (non-blinded) beacon block
+    using its BLS private key before it is published to the network.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: StartRangeSync
+  category: sync
+  description: Initiates the range synchronization process to download a large number
+    of blocks from peers.
+  evidence_file: beacon_node/lighthouse_sync/src/manager/range_sync.rs
+  evidence_function: start_range_sync
+  evidence_lines:
+  - 1
+  - 1
+- name: StoreCheckpointAnchor
+  category: state
+  description: Stores the trusted checkpoint block and state as the anchor for the
+    chain.
+  evidence_file: beacon_node/beacon_chain/src/beacon_chain.rs
+  evidence_function: store_checkpoint_anchor
+  evidence_lines:
+  - 1
+  - 1
+- name: StoreProposedBlockInDatabase
+  category: block
+  description: Persists the assembled and signed beacon block to the local database
+    before publishing.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SubscribeToAttestationSubnet
+  category: network
+  description: The validator client subscribes its beacon node to a specific attestation
+    subnet based on its assigned duties to receive and publish attestations.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SyncToHeadFromCheckpoint
+  category: sync
+  description: Initiates the process to sync forward from a trusted checkpoint to
+    the current head.
+  evidence_file: beacon_node/lighthouse_sync/src/manager/checkpoint_sync.rs
+  evidence_function: sync_to_head_from_checkpoint
+  evidence_lines:
+  - 1
+  - 1
+- name: TrackOptimisticSyncProgress
+  category: sync
+  description: Monitors the progress of the execution layer during optimistic sync.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: TrackRangeSyncRequest
+  category: sync
+  description: Records the details of a sent range sync request to track its progress
+    and detect timeouts.
+  evidence_file: beacon_node/lighthouse_sync/src/manager/range_sync.rs
+  evidence_function: track_range_sync_request
+  evidence_lines:
+  - 1
+  - 1
+- name: TransitionToBackfillSync
+  category: sync
+  description: Initiates the historical block backfill process after checkpoint sync
+    is complete.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: TransitionToRegularSync
+  category: mode
+  description: Transitions the node's synchronization state from initial/range sync
+    to regular gossip-based synchronization.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: UnsubscribeFromAttestationSubnet
+  category: network
+  description: Unsubscribes the validator from a specific attestation subnet after
+    completing aggregation duties.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: UpdateChainHeadFromRangeSync
+  category: sync
+  description: Updates the node's perceived chain head based on the latest block successfully
+    imported during range synchronization.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: UpdateForkChoiceWithBlock
+  category: fork
+  description: Updates the fork choice rule based on a newly processed block.
+  evidence_file: beacon_node/beacon_chain/src/fork_choice.rs
+  evidence_function: update_fork_choice_with_block
+  evidence_lines:
+  - 1
+  - 1
+- name: UpdateForkchoiceFinalized
+  category: fork
+  description: Updates the finalized checkpoint in fork choice.
+  evidence_file: beacon_node/beacon_chain/src/fork_choice.rs
+  evidence_function: update_forkchoice_finalized
+  evidence_lines:
+  - 1
+  - 1
+- name: UpdateForkchoiceHead
+  category: fork
+  description: Updates the head of the forkchoice state in the consensus client.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: UpdateForkchoiceJustified
+  category: fork
+  description: Updates the justified checkpoint in fork choice.
+  evidence_file: beacon_node/beacon_chain/src/fork_choice.rs
+  evidence_function: update_forkchoice_justified
+  evidence_lines:
+  - 1
+  - 1
+- name: UpdateForkchoiceState
+  category: fork
+  description: Updates the internal representation of the beacon chain's head, safe,
+    and finalized block hashes.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: UpdateProposerDutyStatus
+  category: validator
+  description: Marks the block proposal duty as completed or failed for the current
+    slot.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: UpdateSyncProgressMetrics
+  category: sync
+  description: Updates internal metrics related to the overall synchronization progress
+    of the node.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: UpdateSyncStatus
+  category: mode
+  description: After successfully importing a batch of blocks during initial sync,
+    the node updates its internal state to reflect the new head slot and block root.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: UpdateValidatorAttestationDutyStatus
+  category: validator
+  description: Updates the internal status of a validator's attestation duty (e.g.,
+    pending, completed).
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ValidateCheckpointSignature
+  category: validation
+  description: Verifies the signature of the fetched checkpoint block.
+  evidence_file: beacon_node/lighthouse_sync/src/checkpoint.rs
+  evidence_function: validate_checkpoint_signature
+  evidence_lines:
+  - 1
+  - 1
+- name: ValidateCheckpointStateContent
+  category: validation
+  description: Validates the content of the checkpoint state against expected values.
+  evidence_file: beacon_node/lighthouse_sync/src/checkpoint.rs
+  evidence_function: validate_checkpoint_state_content
+  evidence_lines:
+  - 1
+  - 1
+- name: VerifyCheckpoint
+  category: validation
+  description: Performs comprehensive validation of a fetched checkpoint block and
+    state, including their validity and state root consistency.
+  evidence_file: beacon_node/lighthouse_sync/src/checkpoint.rs
+  evidence_function: verify_checkpoint
+  evidence_lines:
+  - 1
+  - 1
+- name: WaitForAttestationProductionTime
+  category: time
+  description: Pauses execution until the optimal time for an attester to produce
+    an attestation.
+  evidence_file: validator_client/src/attestation_service.rs
+  evidence_function: wait_for_attestation_production_time
+  evidence_lines:
+  - 1
+  - 1
+- name: WaitForBlockProductionTime
+  category: time
+  description: Pauses execution until the optimal time for a proposer to propose a
+    block.
+  evidence_file: validator_client/src/block_service.rs
+  evidence_function: wait_for_block_production_time
+  evidence_lines:
+  - 1
+  - 1
+- name: WaitUntilAggregationTime
+  category: time
+  description: Pauses execution until the optimal time for attestation aggregation
+    within a slot.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+workflows:
+- id: initial_sync
+  name: Initial Sync
+  description: Bulk-download blocks from peers via BeaconBlocksByRange RPC. The node
+    selects peers by advertised head_slot, pipelines range requests, validates batches
+    (BLS, state transition, consensus), applies them to advance fork-choice, and loops
+    until the local head reaches the network target slot. Then switches to regular_sync.
+  mode: ''
+  initial_state: initial_sync.initialize
+  states:
+  - id: initial_sync.initialize
+    label: Initialize Sync Manager
+    category: SyncManager
+    transitions:
+    - guard: IsInitialSyncMode
+      actions:
+      - InitializeSyncState
+      next_state: initial_sync.find_peer
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/mod.rs
+        function: SyncManager::spawn_manager
+        lines:
+        - 1
+        - 1
+  - id: initial_sync.find_peer
+    label: Find Range Sync Peer
+    category: RangeSync
+    transitions:
+    - guard: HasSufficientSyncPeers
+      actions:
+      - FindSyncPeer
+      - RequestBlocksFromBestPeer
+      next_state: initial_sync.request_blocks
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/range_sync.rs
+        function: RangeSync::poll
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions: []
+      next_state: initial_sync.find_peer
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/range_sync.rs
+        function: RangeSync::poll
+        lines:
+        - 1
+        - 1
+  - id: initial_sync.request_blocks
+    label: Request Blocks by Range
+    category: RangeSync
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - RequestBlocksByRange
+      - TrackRangeSyncRequest
+      next_state: initial_sync.await_response
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/range_sync.rs
+        function: RangeSync::request_new_range
+        lines:
+        - 1
+        - 1
+  - id: initial_sync.await_response
+    label: Await Range Sync Response
+    category: RangeSync
+    transitions:
+    - guard: IsRangeSyncResponseSuccessful
+      actions: []
+      next_state: initial_sync.process_batch_basic_validation
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/range_sync.rs
+        function: RangeSync::handle_blocks_response
+        lines:
+        - 1
+        - 1
+    - guard: IsRangeSyncRequestTimedOut
+      actions:
+      - HandleRangeSyncTimeout
+      - PenalizePeerRangeSyncTimeout
+      - MarkRangeSyncRequestFailed
+      next_state: initial_sync.find_peer
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/range_sync.rs
+        function: RangeSync::check_timeout
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - MarkRangeSyncRequestFailed
+      next_state: initial_sync.handle_error_response
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/range_sync.rs
+        function: RangeSync::handle_blocks_response
+        lines:
+        - 1
+        - 1
+  - id: initial_sync.handle_error_response
+    label: Handle Range Sync Error Response
+    category: RangeSync
+    transitions:
+    - guard: IsBlockResponseEmpty
+      actions:
+      - MarkRangeSyncRequestFailed
+      - PenalizeRangeSyncPeer
+      next_state: initial_sync.find_peer
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/range_sync.rs
+        function: RangeSync::handle_blocks_response
+        lines:
+        - 1
+        - 1
+    - guard: IsBlockResponseInvalid
+      actions:
+      - MarkRangeSyncRequestFailed
+      - PenalizeRangeSyncPeer
+      next_state: initial_sync.find_peer
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/range_sync.rs
+        function: RangeSync::handle_blocks_response
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - MarkRangeSyncRequestFailed
+      - PenalizeRangeSyncPeer
+      next_state: initial_sync.find_peer
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/range_sync.rs
+        function: RangeSync::handle_blocks_response
+        lines:
+        - 1
+        - 1
+  - id: initial_sync.process_batch_basic_validation
+    label: '''Process Batch: Basic Validation'''
+    category: BlockProcessor
+    transitions:
+    - guard: IsRangeSyncResponseSuccessful
+      actions:
+      - ProcessRangeSyncBlockBatch
+      next_state: initial_sync.process_batch_full_validation_and_import
+      evidence:
+        file: beacon_node/lighthouse_sync/src/block_verification.rs
+        function: verify_block_batch
+        lines:
+        - 1
+        - 1
+    - guard: IsRangeSyncBlockOrderInvalid
+      actions: []
+      next_state: initial_sync.handle_error_response
+      evidence:
+        file: beacon_node/lighthouse_sync/src/block_verification.rs
+        function: verify_block_batch
+        lines:
+        - 1
+        - 1
+    - guard: IsBlockParentMismatchInBatch
+      actions: []
+      next_state: initial_sync.handle_error_response
+      evidence:
+        file: beacon_node/lighthouse_sync/src/block_verification.rs
+        function: verify_block_batch
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions: []
+      next_state: initial_sync.handle_error_response
+      evidence:
+        file: beacon_node/lighthouse_sync/src/block_verification.rs
+        function: verify_block_batch
+        lines:
+        - 1
+        - 1
+  - id: initial_sync.process_batch_full_validation_and_import
+    label: '''Process Batch: Full Validation and Import'''
+    category: BlockProcessor
+    transitions:
+    - guard: IsBlockImportedSuccessfully
+      actions:
+      - ProcessRangeSyncBlockBatch
+      - EnqueueBlockForProcessing
+      - ApplyBlocks
+      - UpdateChainHeadFromRangeSync
+      - UpdateSyncProgressMetrics
+      next_state: initial_sync.check_range_sync_completion
+      evidence:
+        file: beacon_node/lighthouse_sync/src/block_processor.rs
+        function: process_range_sync_block_batch
+        lines:
+        - 1
+        - 1
+    - guard: IsBlockInvalid
+      actions:
+      - InvalidateBlock
+      - MarkRangeSyncRequestFailed
+      - PenalizeRangeSyncPeer
+      next_state: initial_sync.find_peer
+      evidence:
+        file: beacon_node/lighthouse_sync/src/block_processor.rs
+        function: process_range_sync_block_batch
+        lines:
+        - 1
+        - 1
+    - guard: IsBlockParentMissing
+      actions:
+      - InvalidateBlock
+      - MarkRangeSyncRequestFailed
+      - PenalizeRangeSyncPeer
+      next_state: initial_sync.find_peer
+      evidence:
+        file: beacon_node/lighthouse_sync/src/block_processor.rs
+        function: process_range_sync_block_batch
+        lines:
+        - 1
+        - 1
+  - id: initial_sync.check_range_sync_completion
+    label: Check Range Sync Completion
+    category: RangeSync
+    transitions:
+    - guard: IsSyncTargetReached
+      actions:
+      - FinalizeSyncProgress
+      - MarkCheckpointSyncComplete
+      - TransitionToRegularSync
+      next_state: initial_sync.check_backfill_needed
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/mod.rs
+        function: SyncManager::poll
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - FinalizeSyncProgress
+      next_state: initial_sync.find_peer
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/mod.rs
+        function: SyncManager::poll
+        lines:
+        - 1
+        - 1
+  - id: initial_sync.check_backfill_needed
+    label: Check if Backfill Needed
+    category: SyncManager
+    transitions:
+    - guard: IsBackfillNeeded
+      actions: []
+      next_state: initial_sync.start_backfill
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/mod.rs
+        function: SyncManager::poll
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions: []
+      next_state: initial_sync.complete
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/mod.rs
+        function: SyncManager::poll
+        lines:
+        - 1
+        - 1
+  - id: initial_sync.start_backfill
+    label: Start Backfill Sync
+    category: SyncManager
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - TransitionToBackfillSync
+      - BackfillHistoricalBlocks
+      next_state: initial_sync.backfill_in_progress
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/backfill_sync.rs
+        function: BackfillSync::start
+        lines:
+        - 1
+        - 1
+  - id: initial_sync.backfill_in_progress
+    label: Backfill In Progress
+    category: BackfillSync
+    transitions:
+    - guard: IsBackfillCompleted
+      actions:
+      - ProcessBackfilledBlockBatch
+      next_state: initial_sync.complete
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/backfill_sync.rs
+        function: BackfillSync::poll
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - UpdateSyncProgressMetrics
+      next_state: initial_sync.backfill_in_progress
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/backfill_sync.rs
+        function: BackfillSync::poll
+        lines:
+        - 1
+        - 1
+  - id: initial_sync.complete
+    label: Initial Sync Complete
+    category: SyncManager
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - FinalizeSyncProgress
+      - TransitionToRegularSync
+      - ExitOptimisticSyncMode
+      next_state: regular_sync.listen_for_gossip
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/mod.rs
+        function: SyncManager::poll
+        lines:
+        - 1
+        - 1
+- id: regular_sync
+  name: Regular Sync
+  description: Maintains chain head via GossipSub. Subscribes to beacon_block, beacon_attestation,
+    beacon_aggregate_and_proof, etc. Validates received blocks (slot, proposer, BLS,
+    state transition), imports them, updates fork-choice. Handles missing parents
+    via BeaconBlocksByRoot. Falls back to range sync if too far behind.
+  mode: ''
+  initial_state: regular_sync.listen_for_gossip
+  states:
+  - id: regular_sync.listen_for_gossip
+    label: Listen for Gossip Blocks/Attestations
+    category: Network
+    transitions:
+    - guard: IsInitialSyncMode
+      actions: []
+      next_state: initial_sync.initialize
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/mod.rs
+        function: SyncManager::poll
+        lines:
+        - 1
+        - 1
+    - guard: IsGossipMessageRateLimited
+      actions:
+      - ApplyGossipRateLimiting
+      - DropGossipMessage
+      - PenalizePeer
+      - IncRejectedGossipBlocksMetric
+      next_state: regular_sync.listen_for_gossip
+      evidence:
+        file: beacon_node/eth2_libp2p/src/gossip.rs
+        function: GossipService::handle_gossip_message
+        lines:
+        - 1
+        - 1
+    - guard: IsGossipBlockAlreadySeen
+      actions:
+      - RecordGossipMessageId
+      - DropGossipMessage
+      - IncDuplicateGossipBlocksMetric
+      next_state: regular_sync.listen_for_gossip
+      evidence:
+        file: beacon_node/beacon_chain/src/gossip_block_processor.rs
+        function: GossipBlockProcessor::process_gossip_block
+        lines:
+        - 1
+        - 1
+    - guard: IsGossipBlockFuture
+      actions:
+      - RecordGossipMessageId
+      next_state: regular_sync.handle_future_block
+      evidence:
+        file: beacon_node/beacon_chain/src/gossip_block_processor.rs
+        function: GossipBlockProcessor::process_gossip_block
+        lines:
+        - 1
+        - 1
+    - guard: IsGossipBlockTooOld
+      actions:
+      - RecordGossipMessageId
+      - DropGossipMessage
+      - IncRejectedGossipBlocksMetric
+      next_state: regular_sync.listen_for_gossip
+      evidence:
+        file: beacon_node/beacon_chain/src/gossip_block_processor.rs
+        function: GossipBlockProcessor::process_gossip_block
+        lines:
+        - 1
+        - 1
+    - guard: IsGossipBlockValid
+      actions:
+      - QueueGossipMessageForValidation
+      - IncAcceptedGossipBlocksMetric
+      next_state: regular_sync.pre_process_gossip_block
+      evidence:
+        file: beacon_node/beacon_chain/src/gossip_block_processor.rs
+        function: GossipBlockProcessor::process_gossip_block
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - DropGossipMessage
+      - PenalizePeer
+      - IncInvalidGossipBlocksMetric
+      next_state: regular_sync.listen_for_gossip
+      evidence:
+        file: beacon_node/beacon_chain/src/gossip_block_processor.rs
+        function: GossipBlockProcessor::process_gossip_block
+        lines:
+        - 1
+        - 1
+  - id: regular_sync.pre_process_gossip_block
+    label: Pre-process Gossip Block
+    category: Gossip
+    transitions:
+    - guard: IsBlockOptimistic
+      actions:
+      - AddGossipBlockToCache
+      next_state: regular_sync.handle_optimistic_block
+      evidence:
+        file: beacon_node/beacon_chain/src/gossip_block_processor.rs
+        function: GossipBlockProcessor::pre_process_block
+        lines:
+        - 1
+        - 1
+    - guard: IsBlockParentMissing
+      actions:
+      - AddGossipBlockToCache
+      next_state: regular_sync.request_missing_parent
+      evidence:
+        file: beacon_node/beacon_chain/src/gossip_block_processor.rs
+        function: GossipBlockProcessor::pre_process_block
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions: []
+      next_state: regular_sync.queue_block_for_import
+      evidence:
+        file: beacon_node/beacon_chain/src/gossip_block_processor.rs
+        function: GossipBlockProcessor::pre_process_block
+        lines:
+        - 1
+        - 1
+  - id: regular_sync.handle_future_block
+    label: Handle Future Gossip Block
+    category: BlockCache
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - CacheBlockForFutureProcessing
+      - IncRejectedGossipBlocksMetric
+      next_state: regular_sync.listen_for_gossip
+      evidence:
+        file: beacon_node/beacon_chain/src/gossip_block_processor.rs
+        function: GossipBlockProcessor::handle_future_block
+        lines:
+        - 1
+        - 1
+  - id: regular_sync.handle_optimistic_block
+    label: Handle Optimistic Gossip Block
+    category: OptimisticSync
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - SetBlockOptimistic
+      - TrackOptimisticSyncProgress
+      next_state: regular_sync.queue_block_for_import
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/optimistic_sync.rs
+        function: OptimisticSync::handle_optimistic_block
+        lines:
+        - 1
+        - 1
+  - id: regular_sync.request_missing_parent
+    label: Request Missing Parent Block
+    category: BlockLookups
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - RequestMissingParentBlock
+      - RequestBlockByRoot
+      next_state: regular_sync.await_missing_parent_response
+      evidence:
+        file: beacon_node/lighthouse_sync/src/block_lookups.rs
+        function: BlockLookups::request_parent
+        lines:
+        - 1
+        - 1
+  - id: regular_sync.await_missing_parent_response
+    label: Await Missing Parent Response
+    category: BlockLookups
+    transitions:
+    - guard: IsBlockLookupRequestStalled
+      actions:
+      - LogErrorMessage
+      - PenalizePeer
+      - RemoveBlockLookupRequest
+      next_state: regular_sync.listen_for_gossip
+      evidence:
+        file: beacon_node/lighthouse_sync/src/block_lookups.rs
+        function: BlockLookups::poll
+        lines:
+        - 1
+        - 1
+    - guard: IsBlockFound
+      actions: []
+      next_state: regular_sync.process_missing_parent_response
+      evidence:
+        file: beacon_node/lighthouse_sync/src/block_lookups.rs
+        function: BlockLookups::poll
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - PenalizePeer
+      - RemoveBlockLookupRequest
+      next_state: regular_sync.listen_for_gossip
+      evidence:
+        file: beacon_node/lighthouse_sync/src/block_lookups.rs
+        function: BlockLookups::poll
+        lines:
+        - 1
+        - 1
+  - id: regular_sync.process_missing_parent_response
+    label: Process Missing Parent Response
+    category: BlockLookups
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - ProcessCachedGossipBlock
+      next_state: regular_sync.queue_block_for_import
+      evidence:
+        file: beacon_node/beacon_chain/src/gossip_block_processor.rs
+        function: GossipBlockProcessor::process_cached_block
+        lines:
+        - 1
+        - 1
+  - id: regular_sync.queue_block_for_import
+    label: Queue Block for Full Import
+    category: BlockProcessing
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - EnqueueBlockForProcessing
+      next_state: regular_sync.import_block_full_validation
+      evidence:
+        file: beacon_node/beacon_chain/src/block_processor.rs
+        function: BlockProcessor::enqueue
+        lines:
+        - 1
+        - 1
+  - id: regular_sync.import_block_full_validation
+    label: '''Import Block: Full Validation'''
+    category: Chain
+    transitions:
+    - guard: IsBlockImportedSuccessfully
+      actions:
+      - ProcessBeaconBlockInChain
+      - UpdateForkChoiceWithBlock
+      next_state: regular_sync.update_fork_choice
+      evidence:
+        file: beacon_node/beacon_chain/src/block_processor.rs
+        function: BlockProcessor::process_block
+        lines:
+        - 1
+        - 1
+    - guard: IsBlockInvalid
+      actions:
+      - InvalidateBlock
+      - InvalidateBlockAndDescendants
+      - PenalizePeer
+      - RemoveBlockFromProcessingQueue
+      next_state: regular_sync.listen_for_gossip
+      evidence:
+        file: beacon_node/beacon_chain/src/block_processor.rs
+        function: BlockProcessor::process_block
+        lines:
+        - 1
+        - 1
+    - guard: IsBlockTemporarilyInvalid
+      actions:
+      - InvalidateBlock
+      - InvalidateBlockAndDescendants
+      - PenalizePeer
+      - RemoveBlockFromProcessingQueue
+      next_state: regular_sync.listen_for_gossip
+      evidence:
+        file: beacon_node/beacon_chain/src/block_processor.rs
+        function: BlockProcessor::process_block
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - LogErrorMessage
+      - RemoveBlockFromProcessingQueue
+      next_state: regular_sync.listen_for_gossip
+      evidence:
+        file: beacon_node/beacon_chain/src/block_processor.rs
+        function: BlockProcessor::process_block
+        lines:
+        - 1
+        - 1
+  - id: regular_sync.update_fork_choice
+    label: Update Fork Choice
+    category: ForkChoice
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - UpdateForkChoiceWithBlock
+      - UpdateForkchoiceHead
+      - UpdateSyncStatus
+      - UpdateForkchoiceJustified
+      - UpdateForkchoiceFinalized
+      - NotifyExecutionClientOfForkChoiceUpdate
+      - IncAcceptedGossipBlocksMetric
+      next_state: regular_sync.check_sync_deviation
+      evidence:
+        file: beacon_node/beacon_chain/src/fork_choice.rs
+        function: ForkChoice::update_latest_block
+        lines:
+        - 1
+        - 1
+  - id: regular_sync.check_sync_deviation
+    label: Check Sync Deviation
+    category: SyncManager
+    transitions:
+    - guard: ShouldFallBackToRangeSync
+      actions:
+      - StartRangeSync
+      - UpdateSyncStatus
+      next_state: initial_sync.initialize
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/mod.rs
+        function: SyncManager::poll
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions: []
+      next_state: regular_sync.listen_for_gossip
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/mod.rs
+        function: SyncManager::poll
+        lines:
+        - 1
+        - 1
+- id: checkpoint_sync
+  name: Checkpoint Sync
+  description: Fast bootstrap from a trusted finalized checkpoint. Fetches finalized
+    state+block via Beacon API or peer, verifies state root against weak subjectivity
+    checkpoint, initializes fork-choice from the anchor, syncs forward to head, then
+    optionally backfills historical blocks toward genesis (reverse range requests,
+    parent-child integrity only).
+  mode: ''
+  initial_state: checkpoint_sync.initialize
+  states:
+  - id: checkpoint_sync.initialize
+    label: Initialize Checkpoint Sync
+    category: BeaconNode
+    transitions:
+    - guard: IsNodeShuttingDown
+      actions:
+      - InitializeSyncState
+      - StoreCheckpointAnchor
+      next_state: checkpoint_sync.fail
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/checkpoint_sync.rs
+        function: CheckpointSync::poll
+        lines:
+        - 1
+        - 1
+    - guard: IsCheckpointSyncEnabled
+      actions:
+      - InitializeSyncState
+      - StoreCheckpointAnchor
+      next_state: checkpoint_sync.fetch_block_and_state
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/checkpoint_sync.rs
+        function: CheckpointSync::poll
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - InitializeSyncState
+      - StoreCheckpointAnchor
+      next_state: initial_sync.initialize
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/checkpoint_sync.rs
+        function: CheckpointSync::poll
+        lines:
+        - 1
+        - 1
+  - id: checkpoint_sync.fail
+    label: Checkpoint Sync Failed
+    category: SyncManager
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - SetCheckpointSyncFailureReason
+      - LogCheckpointSyncFailure
+      next_state: initial_sync.initialize
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/checkpoint_sync.rs
+        function: CheckpointSync::fail
+        lines:
+        - 1
+        - 1
+  - id: checkpoint_sync.fetch_block_and_state
+    label: Fetch Checkpoint Block and State
+    category: Network
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - FetchCheckpointBlockAndState
+      - SetTrustedCheckpoint
+      - FetchCheckpointFromAPI
+      - FetchCheckpointFromPeers
+      - IncrementCheckpointSyncAttempt
+      - ReportCheckpointSyncProgress
+      next_state: checkpoint_sync.verify_checkpoint
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/checkpoint_sync.rs
+        function: CheckpointSync::fetch_checkpoint_data
+        lines:
+        - 1
+        - 1
+  - id: checkpoint_sync.handle_fetch_error
+    label: Handle Checkpoint Fetch Error
+    category: CheckpointSync
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - FailCheckpointVerification
+      - LogCheckpointSyncFailure
+      - SetCheckpointSyncFailureReason
+      next_state: checkpoint_sync.fail
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/checkpoint_sync.rs
+        function: CheckpointSync::handle_fetch_failure
+        lines:
+        - 1
+        - 1
+  - id: checkpoint_sync.verify_checkpoint
+    label: Verify Checkpoint
+    category: Validation
+    transitions:
+    - guard: CheckpointBlockIsValid AND CheckpointStateIsValid AND IsCheckpointStateRootValid
+      actions:
+      - VerifyCheckpoint
+      - ValidateCheckpointStateContent
+      - ValidateCheckpointSignature
+      next_state: checkpoint_sync.initialize_chain_db
+      evidence:
+        file: beacon_node/lighthouse_sync/src/checkpoint.rs
+        function: verify_checkpoint
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - FailCheckpointVerification
+      - SetCheckpointSyncFailureReason
+      next_state: checkpoint_sync.handle_verification_error
+      evidence:
+        file: beacon_node/lighthouse_sync/src/checkpoint.rs
+        function: verify_checkpoint
+        lines:
+        - 1
+        - 1
+  - id: checkpoint_sync.handle_verification_error
+    label: Handle Checkpoint Verification Error
+    category: CheckpointSync
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - FailCheckpointVerification
+      - LogCheckpointSyncFailure
+      - SetCheckpointSyncFailureReason
+      next_state: checkpoint_sync.fail
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/checkpoint_sync.rs
+        function: CheckpointSync::handle_verification_error
+        lines:
+        - 1
+        - 1
+  - id: checkpoint_sync.initialize_chain_db
+    label: Initialize Chain Database
+    category: Chain
+    transitions:
+    - guard: 'TRUE'
+      actions: []
+      next_state: checkpoint_sync.initialize_fork_choice
+      evidence:
+        file: beacon_node/beacon_chain/src/beacon_chain.rs
+        function: BeaconChain::initialize_from_checkpoint
+        lines:
+        - 1
+        - 1
+  - id: checkpoint_sync.initialize_fork_choice
+    label: Initialize Fork Choice
+    category: ForkChoice
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - InitializeForkChoiceFromCheckpoint
+      - StoreCheckpointAnchor
+      - UpdateForkchoiceState
+      - CommitState
+      next_state: checkpoint_sync.sync_forward_to_head
+      evidence:
+        file: beacon_node/beacon_chain/src/fork_choice.rs
+        function: ForkChoice::initialize_from_checkpoint
+        lines:
+        - 1
+        - 1
+  - id: checkpoint_sync.sync_forward_to_head
+    label: Sync Forward to Head
+    category: SyncManager
+    transitions:
+    - guard: IsSyncTargetReached
+      actions:
+      - FinalizeSyncProgress
+      - SyncToHeadFromCheckpoint
+      next_state: checkpoint_sync.check_backfill_needed
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/checkpoint_sync.rs
+        function: CheckpointSync::sync_to_head
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - StartRangeSync
+      next_state: checkpoint_sync.sync_forward_to_head
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/checkpoint_sync.rs
+        function: CheckpointSync::sync_to_head
+        lines:
+        - 1
+        - 1
+  - id: checkpoint_sync.check_backfill_needed
+    label: Check if Backfill Needed
+    category: SyncManager
+    transitions:
+    - guard: IsBackfillNeeded
+      actions: []
+      next_state: checkpoint_sync.backfill_history
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/mod.rs
+        function: SyncManager::poll
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions: []
+      next_state: checkpoint_sync.complete
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/mod.rs
+        function: SyncManager::poll
+        lines:
+        - 1
+        - 1
+  - id: checkpoint_sync.backfill_history
+    label: Backfill Historical Blocks
+    category: BackfillSync
+    transitions:
+    - guard: IsBackfillCompleted
+      actions: []
+      next_state: checkpoint_sync.complete
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/backfill_sync.rs
+        function: BackfillSync::poll
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - BackfillHistoricalBlocks
+      next_state: checkpoint_sync.backfill_history
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/backfill_sync.rs
+        function: BackfillSync::poll
+        lines:
+        - 1
+        - 1
+  - id: checkpoint_sync.complete
+    label: Checkpoint Sync Complete
+    category: SyncManager
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - MarkCheckpointSyncComplete
+      - TransitionToRegularSync
+      next_state: regular_sync.listen_for_gossip
+      evidence:
+        file: beacon_node/lighthouse_sync/src/manager/checkpoint_sync.rs
+        function: CheckpointSync::complete
+        lines:
+        - 1
+        - 1
+- id: attestation_generate
+  name: Attestation Generate
+  description: 'Validator attestation duty: fetch committee assignment, wait until
+    1/3 into slot (4s), get attestation data (source/target/head), build Attestation
+    with committee bit, sign with BLS key (slashing protection), publish to attestation
+    subnet.'
+  mode: ''
+  initial_state: attestation_generate.initialize
+  states:
+  - id: attestation_generate.initialize
+    label: Initialize Validator Monitor
+    category: ValidatorMonitor
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - UpdateValidatorAttestationDutyStatus
+      next_state: attestation_generate.fetch_duties
+      evidence:
+        file: validator_client/src/attestation_service.rs
+        function: AttestationService::spawn_service
+        lines:
+        - 1
+        - 1
+  - id: attestation_generate.fetch_duties
+    label: Fetch Attester Duties
+    category: ValidatorMonitor
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - FetchAttesterDuties
+      next_state: attestation_generate.await_duties
+      evidence:
+        file: validator_client/src/duty_service.rs
+        function: DutyService::fetch_attester_duties
+        lines:
+        - 1
+        - 1
+  - id: attestation_generate.await_duties
+    label: Await Attester Duties
+    category: ValidatorMonitor
+    transitions:
+    - guard: HasAttesterDuties
+      actions:
+      - FetchAttesterDuties
+      - UpdateValidatorAttestationDutyStatus
+      next_state: attestation_generate.wait_for_production_time
+      evidence:
+        file: validator_client/src/duty_service.rs
+        function: DutyService::poll
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions: []
+      next_state: attestation_generate.error_handling
+      evidence:
+        file: validator_client/src/duty_service.rs
+        function: DutyService::poll
+        lines:
+        - 1
+        - 1
+  - id: attestation_generate.error_handling
+    label: Attestation Error Handling
+    category: Validator
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - LogErrorMessage
+      - RecordSkippedAttestationDuty
+      next_state: attestation_generate.complete
+      evidence:
+        file: validator_client/src/attestation_producer.rs
+        function: AttestationProducer::handle_error
+        lines:
+        - 1
+        - 1
+  - id: attestation_generate.wait_for_production_time
+    label: Wait for Attestation Production Time
+    category: Time
+    transitions:
+    - guard: IsReadyForAttestationProduction
+      actions:
+      - ProduceAttestation
+      - FetchAttestationData
+      - GetAttestationHeadBlock
+      next_state: attestation_generate.produce_data
+      evidence:
+        file: validator_client/src/attestation_producer.rs
+        function: AttestationProducer::wait_for_production_time
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - WaitForAttestationProductionTime
+      next_state: attestation_generate.wait_for_production_time
+      evidence:
+        file: validator_client/src/attestation_producer.rs
+        function: AttestationProducer::wait_for_production_time
+        lines:
+        - 1
+        - 1
+  - id: attestation_generate.produce_data
+    label: Produce Attestation Data
+    category: BeaconChain
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - FetchAttestationData
+      - GetAttestationHeadBlock
+      next_state: attestation_generate.constructing_attestation_data
+      evidence:
+        file: validator_client/src/attestation_producer.rs
+        function: AttestationProducer::produce_data
+        lines:
+        - 1
+        - 1
+  - id: attestation_generate.constructing_attestation_data
+    label: Constructing Attestation Data
+    category: BeaconChain
+    transitions:
+    - guard: IsAttestationCommitteeAvailable
+      actions:
+      - GetValidatorCommitteeIndex
+      - ProduceAttestation
+      - FetchAttestationData
+      - GetAttestationHeadBlock
+      next_state: attestation_generate.construct_attestation
+      evidence:
+        file: validator_client/src/attestation_producer.rs
+        function: AttestationProducer::construct_attestation_data
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions: []
+      next_state: attestation_generate.error_handling
+      evidence:
+        file: validator_client/src/attestation_producer.rs
+        function: AttestationProducer::construct_attestation_data
+        lines:
+        - 1
+        - 1
+  - id: attestation_generate.construct_attestation
+    label: Construct Attestation
+    category: Attestation
+    transitions:
+    - guard: IsAttestationConstructionSuccessful
+      actions:
+      - ProduceAttestation
+      next_state: attestation_generate.sign_attestation
+      evidence:
+        file: validator_client/src/attestation_producer.rs
+        function: AttestationProducer::construct_attestation
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions: []
+      next_state: attestation_generate.error_handling
+      evidence:
+        file: validator_client/src/attestation_producer.rs
+        function: AttestationProducer::construct_attestation
+        lines:
+        - 1
+        - 1
+  - id: attestation_generate.sign_attestation
+    label: Sign Attestation
+    category: Validator
+    transitions:
+    - guard: IsValidatorKeyAvailable
+      actions:
+      - SignAttestation
+      - SignAttestationWithWallet
+      - CheckAndInsertAttestationSlashingProtection
+      next_state: attestation_generate.publish_attestation
+      evidence:
+        file: validator_client/src/attestation_producer.rs
+        function: AttestationProducer::sign_attestation
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - HandleAttestationSigningError
+      - LogErrorMessage
+      - RecordSkippedAttestationDuty
+      next_state: attestation_generate.complete
+      evidence:
+        file: validator_client/src/attestation_producer.rs
+        function: AttestationProducer::sign_attestation
+        lines:
+        - 1
+        - 1
+  - id: attestation_generate.publish_attestation
+    label: Publish Attestation
+    category: Network
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - PublishAttestation
+      - LogAttestationProduction
+      - RecordAttestation
+      next_state: attestation_generate.complete
+      evidence:
+        file: validator_client/src/attestation_producer.rs
+        function: AttestationProducer::publish_attestation
+        lines:
+        - 1
+        - 1
+  - id: attestation_generate.complete
+    label: Attestation Duty Complete
+    category: Validator
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - UpdateValidatorAttestationDutyStatus
+      next_state: attestation_generate.fetch_duties
+      evidence:
+        file: validator_client/src/attestation_service.rs
+        function: AttestationService::poll
+        lines:
+        - 1
+        - 1
+- id: block_generate
+  name: Block Generate
+  description: 'Validator block proposal: fetch proposer duties, call engine_forkchoiceUpdated
+    (payloadAttributes) to start EL payload building, call engine_getPayload to retrieve
+    payload, assemble full beacon block (attestations, deposits, slashings, sync aggregate,
+    execution payload, blob KZG commitments), sign with proposer key (slashing protection),
+    broadcast via gossip.'
+  mode: ''
+  initial_state: block_generate.initialize
+  states:
+  - id: block_generate.initialize
+    label: Initialize Validator Monitor
+    category: ValidatorMonitor
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - FetchProposerDuties
+      next_state: block_generate.fetch_duties
+      evidence:
+        file: validator_client/src/block_service.rs
+        function: BlockService::spawn_service
+        lines:
+        - 1
+        - 1
+  - id: block_generate.fetch_duties
+    label: Fetch Proposer Duties
+    category: ValidatorMonitor
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - FetchProposerDuties
+      next_state: block_generate.await_duties
+      evidence:
+        file: validator_client/src/duty_service.rs
+        function: DutyService::fetch_proposer_duties
+        lines:
+        - 1
+        - 1
+  - id: block_generate.await_duties
+    label: Await Proposer Duties
+    category: ValidatorMonitor
+    transitions:
+    - guard: HasProposerDuties
+      actions:
+      - UpdateProposerDutyStatus
+      - FetchProposerDuties
+      next_state: block_generate.wait_for_production_time
+      evidence:
+        file: validator_client/src/duty_service.rs
+        function: DutyService::poll
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions: []
+      next_state: block_generate.error_handling
+      evidence:
+        file: validator_client/src/duty_service.rs
+        function: DutyService::poll
+        lines:
+        - 1
+        - 1
+  - id: block_generate.error_handling
+    label: Block Error Handling
+    category: Validator
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - LogErrorMessage
+      - NotifyBlockProposalFailure
+      next_state: block_generate.complete
+      evidence:
+        file: validator_client/src/block_service.rs
+        function: BlockService::handle_error
+        lines:
+        - 1
+        - 1
+  - id: block_generate.wait_for_production_time
+    label: Wait for Block Production Time
+    category: Time
+    transitions:
+    - guard: IsBlockProductionTime
+      actions:
+      - PreparePayloadAttributes
+      - NotifyExecutionClientOfForkChoiceUpdate
+      next_state: block_generate.prepare_payload_attributes
+      evidence:
+        file: validator_client/src/block_service.rs
+        function: BlockService::wait_for_production_time
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - WaitForBlockProductionTime
+      next_state: block_generate.wait_for_production_time
+      evidence:
+        file: validator_client/src/block_service.rs
+        function: BlockService::wait_for_production_time
+        lines:
+        - 1
+        - 1
+  - id: block_generate.prepare_payload_attributes
+    label: Prepare Payload Attributes
+    category: Execution
+    transitions:
+    - guard: IsExecutionPayloadRequired
+      actions: []
+      next_state: block_generate.prepare_el_payload_attributes
+      evidence:
+        file: beacon_node/beacon_chain/src/block_proposer.rs
+        function: BlockProposer::prepare_payload_attributes
+        lines:
+        - 1
+        - 1
+    - guard: IsExecutionClientConnected
+      actions: []
+      next_state: block_generate.prepare_el_payload_attributes
+      evidence:
+        file: beacon_node/beacon_chain/src/block_proposer.rs
+        function: BlockProposer::prepare_payload_attributes
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions: []
+      next_state: block_generate.assemble_beacon_block
+      evidence:
+        file: beacon_node/beacon_chain/src/block_proposer.rs
+        function: BlockProposer::prepare_payload_attributes
+        lines:
+        - 1
+        - 1
+  - id: block_generate.prepare_el_payload_attributes
+    label: Prepare EL Payload Attributes
+    category: Execution
+    transitions:
+    - guard: IsExecutionPayloadRequired
+      actions:
+      - PreparePayloadAttributes
+      - RequestPayloadAttributes
+      - NotifyExecutionClientOfForkChoiceUpdate
+      next_state: block_generate.notify_el_forkchoice_updated
+      evidence:
+        file: beacon_node/beacon_chain/src/block_proposer.rs
+        function: BlockProposer::prepare_el_payload_attributes
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions: []
+      next_state: block_generate.error_handling
+      evidence:
+        file: beacon_node/beacon_chain/src/block_proposer.rs
+        function: BlockProposer::prepare_el_payload_attributes
+        lines:
+        - 1
+        - 1
+  - id: block_generate.notify_el_forkchoice_updated
+    label: Notify EL Forkchoice Updated
+    category: Execution
+    transitions:
+    - guard: IsForkchoiceUpdateSuccessful
+      actions:
+      - NotifyExecutionClientOfForkChoiceUpdate
+      - CallEngineForkchoiceUpdatedV3
+      next_state: block_generate.request_execution_payload
+      evidence:
+        file: beacon_node/beacon_chain/src/block_proposer.rs
+        function: BlockProposer::notify_el_forkchoice_updated
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions: []
+      next_state: block_generate.error_handling
+      evidence:
+        file: beacon_node/beacon_chain/src/block_proposer.rs
+        function: BlockProposer::notify_el_forkchoice_updated
+        lines:
+        - 1
+        - 1
+  - id: block_generate.request_execution_payload
+    label: Request Execution Payload
+    category: Execution
+    transitions:
+    - guard: ExecutionPayloadReady
+      actions:
+      - GetExecutionPayload
+      - CallEngineGetPayloadV3
+      - MonitorExecutionPayloadBuilding
+      next_state: block_generate.assemble_beacon_block
+      evidence:
+        file: beacon_node/beacon_chain/src/block_proposer.rs
+        function: BlockProposer::request_execution_payload
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions: []
+      next_state: block_generate.error_handling
+      evidence:
+        file: beacon_node/beacon_chain/src/block_proposer.rs
+        function: BlockProposer::request_execution_payload
+        lines:
+        - 1
+        - 1
+  - id: block_generate.assemble_beacon_block
+    label: Assemble Beacon Block
+    category: Block
+    transitions:
+    - guard: IsBlockBodyComplete
+      actions:
+      - AssembleBeaconBlock
+      - SetGraffitiInBlock
+      - FetchDepositsForBlock
+      - FetchBlobSidecarsForBlock
+      - FetchVoluntaryExitsForBlock
+      - FetchSlashingsForBlock
+      - FetchBlsToExecutionChangesForBlock
+      - FetchWithdrawalsForBlock
+      next_state: block_generate.sign_block
+      evidence:
+        file: beacon_node/beacon_chain/src/block_proposer.rs
+        function: BlockProposer::assemble_beacon_block
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - HandleBlockAssemblyError
+      - NotifyBlockProposalFailure
+      next_state: block_generate.complete
+      evidence:
+        file: beacon_node/beacon_chain/src/block_proposer.rs
+        function: BlockProposer::assemble_beacon_block
+        lines:
+        - 1
+        - 1
+  - id: block_generate.sign_block
+    label: Sign Beacon Block
+    category: Validator
+    transitions:
+    - guard: IsValidatorKeyPresentForProposer
+      actions:
+      - SignBeaconBlock
+      - CheckAndInsertBlockSlashingProtection
+      - StoreProposedBlockInDatabase
+      next_state: block_generate.publish_block
+      evidence:
+        file: validator_client/src/block_service.rs
+        function: BlockService::sign_block
+        lines:
+        - 1
+        - 1
+    - guard: 'TRUE'
+      actions:
+      - HandleBlockSigningError
+      - NotifyBlockProposalFailure
+      - LogErrorMessage
+      next_state: block_generate.complete
+      evidence:
+        file: validator_client/src/block_service.rs
+        function: BlockService::sign_block
+        lines:
+        - 1
+        - 1
+  - id: block_generate.publish_block
+    label: Publish Block
+    category: Network
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - PublishBlock
+      - RecordProducedBlock
+      - LogBlockProposalAttempt
+      next_state: block_generate.complete
+      evidence:
+        file: validator_client/src/block_service.rs
+        function: BlockService::publish_block
+        lines:
+        - 1
+        - 1
+  - id: block_generate.complete
+    label: Block Duty Complete
+    category: Validator
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - UpdateProposerDutyStatus
+      next_state: block_generate.fetch_duties
+      evidence:
+        file: validator_client/src/block_service.rs
+        function: BlockService::poll
+        lines:
+        - 1
+        - 1
+- id: aggregate
+  name: Attestation Aggregation
+  description: 'Aggregator role: check VRF-based aggregator selection on slot signature,
+    subscribe to committee attestation subnet, wait until 2/3 into slot (8s), collect
+    individual attestations, compute AggregateAndProof (bitwise-OR bits + BLS signature
+    combination), sign, publish to global beacon_aggregate_and_proof gossip topic.'
+  mode: validator_duty
+  initial_state: aggregate.init
+  states:
+  - id: aggregate.init
+    label: Initialize Aggregation Duty
+    category: Setup
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - MonitorAggregatorDuties
+      next_state: aggregate.fetch_duties
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::spawn_service
+        lines:
+        - 180
+        - 185
+  - id: aggregate.fetch_duties
+    label: Fetch Aggregator Duties
+    category: Duty Management
+    transitions:
+    - guard: HasAggregatorDuties
+      actions:
+      - FetchAggregatorDuties
+      next_state: aggregate.check_aggregator_selection
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::do_aggregate_service
+        lines:
+        - 450
+        - 460
+    - guard: NOT HasAggregatorDuties
+      actions: []
+      next_state: aggregate.fetch_duties
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::do_aggregate_service
+        lines:
+        - 461
+        - 464
+  - id: aggregate.check_aggregator_selection
+    label: Check Aggregator Selection
+    category: VRF Check
+    transitions:
+    - guard: IsAggregatorForSubnet
+      actions: []
+      next_state: aggregate.subscribe_subnet
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::do_aggregate_service
+        lines:
+        - 465
+        - 470
+    - guard: 'TRUE'
+      actions: []
+      next_state: aggregate.fetch_duties
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::do_aggregate_service
+        lines:
+        - 471
+        - 474
+  - id: aggregate.subscribe_subnet
+    label: Subscribe to Attestation Subnet
+    category: Network I/O
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - SubscribeToAttestationSubnet
+      - MonitorAttestationSubnet
+      next_state: aggregate.wait_for_aggregation_time
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::do_aggregate_service
+        lines:
+        - 475
+        - 485
+  - id: aggregate.wait_for_aggregation_time
+    label: Wait for Aggregation Time
+    category: Timing
+    transitions:
+    - guard: ShouldAggregateAttestations
+      actions:
+      - WaitUntilAggregationTime
+      - ScheduleAggregationProduction
+      next_state: aggregate.collect_attestations
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::do_aggregate_service
+        lines:
+        - 486
+        - 495
+    - guard: 'TRUE'
+      actions: []
+      next_state: aggregate.fetch_duties
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::do_aggregate_service
+        lines:
+        - 496
+        - 499
+  - id: aggregate.collect_attestations
+    label: Collect Individual Attestations
+    category: Attestation Collection
+    transitions:
+    - guard: HasIndividualAttestationsForAggregation
+      actions:
+      - CollectIndividualAttestations
+      next_state: aggregate.combine_attestations
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::do_aggregate_service
+        lines:
+        - 500
+        - 510
+    - guard: NOT HasIndividualAttestationsForAggregation
+      actions: []
+      next_state: aggregate.cleanup_aggregation
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::do_aggregate_service
+        lines:
+        - 511
+        - 514
+  - id: aggregate.combine_attestations
+    label: Combine and Prepare Aggregate
+    category: Attestation Assembly
+    transitions:
+    - guard: SufficientAttestationsForAggregation
+      actions:
+      - CombineAttestationsIntoAggregate
+      - PrepareAggregateAndProof
+      - CombineAttestationSignatures
+      next_state: aggregate.sign_aggregate
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::do_aggregate_service
+        lines:
+        - 515
+        - 525
+    - guard: NOT SufficientAttestationsForAggregation
+      actions: []
+      next_state: aggregate.cleanup_aggregation
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::do_aggregate_service
+        lines:
+        - 526
+        - 529
+  - id: aggregate.sign_aggregate
+    label: Sign Aggregate and Proof
+    category: Cryptography
+    transitions:
+    - guard: IsAggregateSlashingProtected
+      actions:
+      - SignAggregateAndProof
+      - RecordAggregateAndProofSlashingProtection
+      next_state: aggregate.publish_aggregate
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::do_aggregate_service
+        lines:
+        - 530
+        - 540
+    - guard: NOT IsAggregateSlashingProtected
+      actions: []
+      next_state: aggregate.cleanup_aggregation
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::do_aggregate_service
+        lines:
+        - 541
+        - 544
+  - id: aggregate.publish_aggregate
+    label: Publish Aggregate and Proof
+    category: Network I/O
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - PublishAggregateAndProof
+      next_state: aggregate.cleanup_aggregation
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::do_aggregate_service
+        lines:
+        - 545
+        - 550
+  - id: aggregate.cleanup_aggregation
+    label: Cleanup Aggregation
+    category: Cleanup
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - ClearCollectedAttestations
+      - UnsubscribeFromAttestationSubnet
+      next_state: aggregate.fetch_duties
+      evidence:
+        file: validator_client/src/validator_client.rs
+        function: ValidatorClient::do_aggregate_service
+        lines:
+        - 551
+        - 556
+- id: execute_layer_relation
+  name: Execution Layer Relation
+  description: Manages communication between the Consensus and Execution layers via
+    the Engine API. This includes payload validation, fork choice updates, and handling
+    optimistic sync.
+  mode: ''
+  initial_state: execute_layer_relation.awaiting_block_for_processing
+  states:
+  - id: execute_layer_relation.awaiting_block_for_processing
+    label: Awaiting Block For Processing
+    category: idle
+    transitions:
+    - guard: ExecutionEngineCircuitBreakerIsOpen
+      actions: []
+      next_state: execute_layer_relation.error
+      evidence:
+        file: beacon_node/execution_layer/src/lib.rs
+        function: ExecutionLayer::new_payload
+        lines:
+        - 310
+        - 315
+    - guard: 'TRUE'
+      actions:
+      - SendNewPayloadToExecutionClient
+      next_state: execute_layer_relation.awaiting_payload_status
+      evidence:
+        file: beacon_node/beacon_chain/src/beacon_chain.rs
+        function: BeaconChain::process_block_result
+        lines:
+        - 1650
+        - 1660
+  - id: execute_layer_relation.awaiting_payload_status
+    label: Awaiting Payload Status
+    category: exec_layer_comm
+    transitions:
+    - guard: ExecutionPayloadStatusIsValid
+      actions: []
+      next_state: execute_layer_relation.processing_valid_status
+      evidence:
+        file: beacon_node/beacon_chain/src/beacon_chain.rs
+        function: BeaconChain::process_new_payload_result
+        lines:
+        - 1701
+        - 1705
+    - guard: ExecutionPayloadStatusIsSyncing
+      actions: []
+      next_state: execute_layer_relation.processing_syncing_status
+      evidence:
+        file: beacon_node/beacon_chain/src/beacon_chain.rs
+        function: BeaconChain::process_new_payload_result
+        lines:
+        - 1706
+        - 1710
+    - guard: ExecutionPayloadStatusIsInvalid
+      actions: []
+      next_state: execute_layer_relation.processing_invalid_status
+      evidence:
+        file: beacon_node/beacon_chain/src/beacon_chain.rs
+        function: BeaconChain::process_new_payload_result
+        lines:
+        - 1711
+        - 1715
+    - guard: ExecutionEngineFailureThresholdReached
+      actions:
+      - OpenExecutionEngineCircuitBreaker
+      next_state: execute_layer_relation.error
+      evidence:
+        file: beacon_node/execution_layer/src/lib.rs
+        function: ExecutionLayer::handle_error
+        lines:
+        - 550
+        - 560
+  - id: execute_layer_relation.processing_valid_status
+    label: Processing VALID Status
+    category: state_transition
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - AdvanceStateWithBlock
+      next_state: execute_layer_relation.updating_fork_choice
+      evidence:
+        file: beacon_node/beacon_chain/src/beacon_chain.rs
+        function: BeaconChain::process_valid_payload
+        lines:
+        - 1800
+        - 1810
+  - id: execute_layer_relation.processing_syncing_status
+    label: Processing SYNCING Status
+    category: state_transition
+    transitions:
+    - guard: OptimisticSyncDepthExceedsLimit
+      actions:
+      - ExitOptimisticSync
+      next_state: execute_layer_relation.error
+      evidence:
+        file: beacon_node/beacon_chain/src/beacon_chain.rs
+        function: BeaconChain::process_syncing_payload
+        lines:
+        - 1850
+        - 1860
+    - guard: 'TRUE'
+      actions:
+      - AdvanceStateWithBlock
+      next_state: execute_layer_relation.updating_fork_choice
+      evidence:
+        file: beacon_node/beacon_chain/src/beacon_chain.rs
+        function: BeaconChain::process_syncing_payload
+        lines:
+        - 1865
+        - 1875
+  - id: execute_layer_relation.processing_invalid_status
+    label: Processing INVALID Status
+    category: fork_management
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - InvalidateBlockAndDescendants
+      - RollbackForkChoiceToValidHead
+      next_state: execute_layer_relation.updating_fork_choice
+      evidence:
+        file: beacon_node/fork_choice/src/fork_choice.rs
+        function: ForkChoice::on_invalid_block
+        lines:
+        - 510
+        - 530
+  - id: execute_layer_relation.updating_fork_choice
+    label: Updating Fork Choice
+    category: exec_layer_comm
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - SendForkChoiceUpdateToExecutionClient
+      next_state: execute_layer_relation.awaiting_block_for_processing
+      evidence:
+        file: beacon_node/beacon_chain/src/beacon_chain.rs
+        function: BeaconChain::update_fork_choice
+        lines:
+        - 1900
+        - 1915
+  - id: execute_layer_relation.error
+    label: Error
+    category: terminal
+    transitions: []

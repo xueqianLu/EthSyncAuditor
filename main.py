@@ -1,14 +1,17 @@
 """EthAuditor — main entry point.
 
+Phase 1 is skipped — merged vocabulary loaded from docs/.
+Phase 2 iterates per-workflow (7 workflows × per-workflow convergence).
+
 Usage:
     python main.py                          # Run with default provider (requires API key)
     python main.py --mock                   # Run with mock agents (no LLM calls)
     python main.py --provider gemini        # Use Gemini (requires GOOGLE_API_KEY)
     python main.py --provider anthropic     # Use Anthropic (requires ANTHROPIC_API_KEY)
     python main.py --resume                 # Resume from latest checkpoint
-    python main.py --resume-from 1:5        # Resume from Phase 1, Iteration 5
+    python main.py --resume-from 2:5        # Resume from Phase 2, Iteration 5
     python main.py --list-checkpoints       # Show all saved checkpoints
-    python main.py --max-iter 3             # Limit both phases to 3 iterations
+    python main.py --max-iter 3             # Limit per-workflow iterations to 3
 """
 
 from __future__ import annotations
@@ -42,7 +45,7 @@ from file_io.writer import (
     write_all_final_lsgs,
     write_diff_report,
     write_diff_report_json,
-    write_enriched_spec,
+    write_false_positives_report,
 )
 from graph import compile_graph, configure_graph, make_initial_state
 
@@ -163,13 +166,7 @@ def main() -> None:
         "--max-iter",
         type=int,
         default=None,
-        help="Override MAX_ITER for both phases (e.g. --max-iter 2 for quick test)",
-    )
-    parser.add_argument(
-        "--max-iter-phase1",
-        type=int,
-        default=None,
-        help="Override MAX_ITER_PHASE1 only",
+        help="Override MAX_ITER_PHASE2 (per-workflow iteration limit)",
     )
     parser.add_argument(
         "--max-iter-phase2",
@@ -186,6 +183,11 @@ def main() -> None:
         "--gemini-base-url",
         default=None,
         help="Custom API base URL for Gemini (proxy support)",
+    )
+    parser.add_argument(
+        "--skip-verify",
+        action="store_true",
+        help="Skip Phase 3 B-class verification",
     )
     args = parser.parse_args()
 
@@ -207,18 +209,17 @@ def main() -> None:
     import config as _cfg
 
     if args.max_iter is not None:
-        _cfg.MAX_ITER_PHASE1 = args.max_iter
         _cfg.MAX_ITER_PHASE2 = args.max_iter
-    if args.max_iter_phase1 is not None:
-        _cfg.MAX_ITER_PHASE1 = args.max_iter_phase1
     if args.max_iter_phase2 is not None:
         _cfg.MAX_ITER_PHASE2 = args.max_iter_phase2
+    if args.skip_verify:
+        _cfg.VERIFY_ENABLED = False
 
     logger.info("=" * 60)
     logger.info("EthAuditor starting (mock=%s, provider=%s, resume=%s, "
-                "max_iter_p1=%d, max_iter_p2=%d)",
+                "max_iter_p2=%d)",
                 args.mock, provider, args.resume,
-                _cfg.MAX_ITER_PHASE1, _cfg.MAX_ITER_PHASE2)
+                _cfg.MAX_ITER_PHASE2)
     logger.info("=" * 60)
 
     # Ensure output dirs exist
@@ -295,12 +296,11 @@ def main() -> None:
 
     # ── Write outputs ─────────────────────────────────────────────────
     phase = final_state.get("current_phase", 0)
-    if phase >= 1:
-        write_enriched_spec(final_state)
     if phase >= 2:
         write_all_final_lsgs(final_state)
         write_diff_report(final_state)
         write_diff_report_json(final_state)
+        write_false_positives_report(final_state)
 
     # ── Save final checkpoint ─────────────────────────────────────────
     save_checkpoint(

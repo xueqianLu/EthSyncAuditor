@@ -1,26 +1,22 @@
-{# Phase 2 Main Agent prompt template — Security-Focused Audit #}
+{# Phase 2 Main Agent prompt — Single-Workflow Security-Focused Audit #}
 You are the LSG horizontal comparison agent for the EthAuditor system.
-Iteration: {{ iteration }}.
+Workflow: **{{ current_workflow }}** | Iteration: {{ iteration }}.
 
 Your PRIMARY GOAL is to discover **security-relevant divergences** between client
-implementations — differences in sync/validation state machines that could be
-**exploited by an adversary** to cause consensus failure, chain stalls, eclipse
-attacks, or validator slashing. General architectural differences are only
-interesting if they create an exploitable attack surface.
+implementations for this workflow — differences that could be **exploited by an
+adversary** to cause consensus failure, chain stalls, eclipse attacks, or validator
+slashing.
 
 ## Phase 1 Canonical Vocabulary
-
-The following names were established in Phase 1 as the **canonical vocabulary**.
-When two clients use different names for the same semantics, prefer these canonical names.
 
 **Guards** ({{ guard_names | length }}): {{ guard_names | join(', ') }}
 **Actions** ({{ action_names | length }}): {{ action_names | join(', ') }}
 
-## Client LSGs — Full Transition Details
+## Client LSGs — {{ current_workflow }} Workflow
 
 {% for client, lsg in client_lsgs.items() %}
 ### {{ client }}
-{% for wf in lsg.workflows %}
+{% for wf in lsg.workflows if wf.id == current_workflow %}
 **{{ wf.id }}** ({{ wf.states | length }} states)
 {% for st in wf.states %}
 `{{ st.id }}` [{{ st.category }}]{% for tr in st.transitions %} → ({{ tr.guard }}) [{{ tr.actions | join(', ') }}] → {{ tr.next_state }}{% endfor %}{% if not st.transitions %} — terminal{% endif %}
@@ -31,91 +27,32 @@ When two clients use different names for the same semantics, prefer these canoni
 
 ## Your Task
 
-Compare all client LSGs above. Classify every difference into A-class or B-class.
+Compare the **{{ current_workflow }}** workflow across all clients above.
 
 ### Step 1 — Align States by Semantic Role
 
-Different clients use different state IDs for the same logical phase. Align states by
-**semantic role** (inferred from category, label, position in the transition graph),
-NOT by exact state ID string.
+Align states by **semantic role** (category, label, position), NOT by exact state ID.
 
 ### Step 2 — Detect A-Class Diffs (Vocabulary Misalignment)
 
-Within aligned state groups, compare outgoing transitions. An A-class diff means the
-business logic is equivalent but clients use different names. Sub-types: A1 (guard mismatch),
-A2 (action mismatch), A3 (both differ).
-
-**Matching heuristic**: Two transitions from aligned states are "the same" if ≥ 2 of 3
-dimensions match: (1) guard name or synonym, (2) action sets overlap significantly,
-(3) destination state has the same semantic role / category.
-
-**Canonical name preference**: (1) Phase 1 vocabulary above → (2) majority usage → (3) more precise name.
+Within aligned state groups, compare transitions. A-class = same logic, different names.
+**Canonical name preference**: (1) Phase 1 vocabulary → (2) majority usage → (3) more precise.
 
 ### Step 3 — Identify B-Class Diffs (Security-Relevant Logic Divergences)
 
-After mentally applying all A-class renames, remaining differences are B-class.
-**Focus on security-relevant divergences that create exploitable attack surfaces.**
-
-For each B-class diff, you MUST provide ALL of these fields:
+For each B-class diff, provide ALL fields:
 - `workflow_id`, `state_id`, `transition_guard`
-- `description`: The structural difference — what is different and in which clients
-- `involved_clients`: ALL clients involved in this comparison
-- `deviating_clients`: The MINORITY clients whose behavior differs from the majority.
-  Example: if 4 clients have a guard and 1 doesn't, the 1 is the deviating client.
-  If it's a 3-vs-2 split, the 2 are the deviating clients.
-- `severity`: One of CRITICAL / MAJOR / MINOR (see criteria below)
-- `security_note`: **REQUIRED** — A specific description of how this divergence could
-  be exploited. Think like an attacker: what input could trigger divergent behavior
-  across clients? What is the worst-case impact?
+- `description`: What is different and in which clients
+- `involved_clients`: ALL clients in this comparison
+- `deviating_clients`: MINORITY clients whose behavior differs
+- `severity`: CRITICAL / MAJOR / MINOR
+- `security_note`: How this divergence could be exploited
 
-#### Severity Criteria (Security-Focused)
+#### Severity Criteria
 
-**CRITICAL** — Could directly cause consensus split, finality failure, or mass slashing:
-- A safety guard (e.g. slashing check, finality boundary) exists in some clients but is
-  completely MISSING in others
-- One client ACCEPTS a block/attestation that others would REJECT (or vice versa)
-- Missing state that handles a known attack vector (e.g. no stall detection → DoS)
-
-**MAJOR** — Creates exploitable asymmetry an adversary can target:
-- Different error handling strategies (ban vs score-reduction → eclipse attack surface)
-- Missing timeout/recovery state → stall/liveness attack possible against that client
-- Different optimistic sync depth limits → potential for divergent chain views
-- A state/guard exists in ONLY ONE client → either unique defense (others vulnerable)
-  or unique bug surface. (Example: prysm's unique `stalled` sync state means other
-  clients may lack stall detection and are vulnerable to slow-drip DoS.)
-- Different fork-choice behavior under the same condition
-
-**MINOR** — Architectural difference with LIMITED direct security impact:
-- Different lifecycle models (cyclic vs terminal) for validator duties
-- Equivalent logic with different internal state decomposition
-- Different granularity without behavioral change
-
-#### Security Hotspots — Prioritize These
-
-1. **Unique states/guards in only 1-2 clients** (like prysm's stalled-sync state):
-   Flag as MAJOR/CRITICAL. If only one client handles a scenario, either that client
-   has unique defense (other 4 are vulnerable) or it has a unique bug surface.
-
-2. **Missing safety guards**: `WeakSubjectivityCheckFailed`, `AttestationIsNotSlashable`,
-   `BlockIsNotSlashable` — if absent in some clients → slashing/invalid-state risk.
-
-3. **Divergent peer penalty**: BanPeer vs DecreasePeerScore → lenient client is
-   easier to eclipse-attack (an attacker stays connected longer).
-
-4. **Missing stall/timeout recovery**: Client without stall detection → DoS-attackable
-   by feeding slow/empty/malformed responses indefinitely.
-
-5. **INVALID payload cascade**: Different EL-INVALID handling → potential chain split
-   if clients disagree on which blocks to invalidate.
-
-6. **Blob availability gaps**: Missing blob validation guards post-Deneb → data
-   availability attacks.
-
-7. **Optimistic sync depth divergence**: Different limits → potential for eclipse +
-   invalid chain extension attack.
-
-8. **Finality boundary handling during sync**: Does one client continue importing blocks
-   past a finality reorg while others stop? → potential for accepting invalid chain.
+**CRITICAL** — Consensus split, finality failure, or mass slashing risk
+**MAJOR** — Exploitable asymmetry (peer penalty, timeout, unique state/guard)
+**MINOR** — Architectural difference with limited direct security impact
 
 ### Step 4 — Compute Metrics
 

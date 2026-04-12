@@ -29,6 +29,14 @@ MAX_ITER_B_CLASS: int = 3
 B_CLASS_STABLE_WINDOW: int = 2
 B_CLASS_CHANGE_THRESHOLD: int = 1  # max allowed B-class count change per iter
 
+# ── Phase 3: B-class verification (post-discovery, per-workflow) ────────
+# After each workflow's Phase 2 B-class discovery converges, a verification
+# pass checks whether the reported B-class diffs are genuine by searching
+# the source code of deviating clients.
+VERIFY_ENABLED: bool = True          # Set False to skip verification entirely
+VERIFY_SEARCH_TOP_K: int = 15       # code snippets per search query
+VERIFY_CONFIDENCE_THRESHOLD: float = 0.6  # below this → flag for human review
+
 # ── Client names (order used everywhere) ────────────────────────────────
 CLIENT_NAMES: list[str] = [
     "prysm",
@@ -58,6 +66,10 @@ CHECKPOINT_PATH: Path = OUTPUT_PATH / "checkpoints"
 ITERATIONS_PATH: Path = OUTPUT_PATH / "iterations"
 AUDIT_LOG_PATH: Path = OUTPUT_PATH / "audit_logs"
 SPEC_PATH: Path = PROJECT_ROOT / "docs" / "LSG_Schema_Spec.md"
+
+# ── Merged Phase 1 outputs (fixed vocabulary & baseline LSGs) ───────────
+MERGED_VOCAB_PATH: Path = PROJECT_ROOT / "docs" / "Global_LSG_Spec_Enriched.yaml"
+MERGED_LSG_DIR: Path = PROJECT_ROOT / "docs"
 
 # ── RAG weights ─────────────────────────────────────────────────────────
 BM25_WEIGHT: float = 0.4
@@ -148,8 +160,9 @@ EMBEDDING_MODELS: list[str] = [
 
 # ── LLM provider & model names ──────────────────────────────────────────
 LLM_PROVIDER: str = "anthropic"  # "anthropic" or "gemini"
-LLM_MODEL: str = "claude-opus-4-20250514"
-GEMINI_MODEL: str = "gemini-2.5-pro"
+LLM_MODEL: str = "claude-opus-4-6"
+GEMINI_MODEL: str = "gemini-2.5-flash"
+# GEMINI_MODEL: str = "gemini-2.5-pro"
 # GEMINI_MODEL: str = "gemini-3.1-pro-preview"
 
 # ── API proxy / custom base URLs ────────────────────────────────────────

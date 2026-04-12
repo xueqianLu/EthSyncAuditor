@@ -551,6 +551,30 @@ def write_diff_report(state: dict[str, Any]) -> Path:
         "",
     ])
 
+    # ── 2b. Verification Summary (Phase 3) ─────────────────────────────
+    rejected_diffs = state.get("rejected_b_diffs", [])
+    reclassified_diffs = state.get("reclassified_to_a", [])
+    n_confirmed = sum(1 for d in b_diffs if d.get("verification_status") == "CONFIRMED")
+    n_downgraded = sum(1 for d in b_diffs if d.get("verification_status") == "DOWNGRADED")
+    has_verification = (
+        n_confirmed + n_downgraded + len(rejected_diffs) + len(reclassified_diffs) > 0
+    )
+    if has_verification:
+        lines.extend([
+            "## Verification Summary (Phase 3)",
+            "",
+            "Each B-class diff was verified against source code. "
+            "Only **verified** diffs appear in the report below.",
+            "",
+            "| Verdict | Count |",
+            "|---------|-------|",
+            f"| ✅ Confirmed | {n_confirmed} |",
+            f"| ⬇️ Downgraded | {n_downgraded} |",
+            f"| ❌ Rejected (false positive) | {len(rejected_diffs)} |",
+            f"| 🔄 Reclassified (B→A) | {len(reclassified_diffs)} |",
+            "",
+        ])
+
     # ── 3. Per-Workflow Summary ────────────────────────────────────────
     lines.extend([
         "## Per-Workflow Summary",
@@ -784,8 +808,99 @@ def write_diff_report_json(state: dict[str, Any]) -> Path:
         "iteration_history": iteration_history,
     }
 
+    # Add verification summary to JSON if present
+    rejected_diffs = state.get("rejected_b_diffs", [])
+    reclassified_diffs = state.get("reclassified_to_a", [])
+    n_confirmed = sum(1 for d in b_diffs if d.get("verification_status") == "CONFIRMED")
+    n_downgraded = sum(1 for d in b_diffs if d.get("verification_status") == "DOWNGRADED")
+    if n_confirmed + n_downgraded + len(rejected_diffs) + len(reclassified_diffs) > 0:
+        report["verification_summary"] = {
+            "confirmed": n_confirmed,
+            "downgraded": n_downgraded,
+            "rejected": len(rejected_diffs),
+            "reclassified": len(reclassified_diffs),
+        }
+        report["rejected_b_diffs"] = rejected_diffs
+        report["reclassified_to_a"] = reclassified_diffs
+
     with open(path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False, default=str)
 
     logger.info("[write_diff_report_json] → %s", path)
     return path
+
+
+def write_false_positives_report(state: dict[str, Any]) -> Path | None:
+    """Write rejected (false positive) B-class diffs to a separate file.
+
+    Returns ``None`` if there are no rejected diffs.
+    """
+    rejected = state.get("rejected_b_diffs", [])
+    reclassified = state.get("reclassified_to_a", [])
+
+    if not rejected and not reclassified:
+        return None
+
+    config.OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
+    path = config.OUTPUT_PATH / "Audit_False_Positives.md"
+
+    lines: list[str] = [
+        "# EthAuditor — False Positives & Reclassified Diffs",
+        "",
+        f"**Generated at**: {datetime.now(timezone.utc).isoformat()}",
+        "",
+        "This file contains B-class diffs that were **rejected** or "
+        "**reclassified** during Phase 3 verification. They are excluded "
+        "from the main Audit Diff Report.",
+        "",
+    ]
+
+    if rejected:
+        lines.extend([
+            f"## Rejected Diffs ({len(rejected)})",
+            "",
+            "These diffs were determined to be **false positives** — code "
+            "evidence shows the claimed divergence does not exist.",
+            "",
+        ])
+        for i, diff in enumerate(rejected, 1):
+            lines.append(f"### FP-{i}: {diff.get('workflow_id', '?')} / "
+                         f"{diff.get('state_id', '?')}")
+            lines.append("")
+            lines.append(f"- **Guard**: `{diff.get('transition_guard', '?')}`")
+            lines.append(f"- **Original Severity**: {diff.get('severity', '?')}")
+            lines.append(f"- **Description**: {diff.get('description', '')}")
+            reason = diff.get("rejection_reason", "")
+            if reason:
+                lines.append(f"- **Rejection Reason**: {reason}")
+            lines.append("")
+
+    if reclassified:
+        lines.extend([
+            f"## Reclassified Diffs ({len(reclassified)})",
+            "",
+            "These diffs were reclassified from B-class (logic divergence) "
+            "to A-class (vocabulary/naming difference). They have been "
+            "moved to the A-class section of the main report.",
+            "",
+        ])
+        for i, diff in enumerate(reclassified, 1):
+            lines.append(f"### RC-{i}: {diff.get('workflow_id', '?')} / "
+                         f"{diff.get('state_id', '?')}")
+            lines.append("")
+            lines.append(f"- **Guard**: `{diff.get('transition_guard', '?')}`")
+            lines.append(f"- **Description**: {diff.get('description', '')}")
+            reason = diff.get("reclassify_reason", "")
+            if reason:
+                lines.append(f"- **Reclassify Reason**: {reason}")
+            lines.append("")
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    logger.info(
+        "[write_false_positives_report] → %s (rejected=%d reclassified=%d)",
+        path, len(rejected), len(reclassified),
+    )
+    return path
+

@@ -1,3 +1,5 @@
+"""Tests for I/O functions (Step 5) — checkpoint, writer, audit logger."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,20 +13,20 @@ from eth_io import (
     write_final_lsgs,
     write_iteration_lsg,
 )
-from state import make_initial_state
+from graph import make_initial_state
 
 
 def test_checkpoint_save_and_load_roundtrip():
     state = make_initial_state()
-    state["phase"] = 1
-    state["iteration_phase1"] = 3
+    state["current_phase"] = 1
+    state["phase1_iteration"] = 3
 
     path = save_checkpoint(state, phase=1, iteration=3)
     loaded = load_checkpoint(phase=1, iteration=3)
 
     assert path.exists()
-    assert loaded["phase"] == 1
-    assert loaded["iteration_phase1"] == 3
+    assert loaded["current_phase"] == 1
+    assert loaded["phase1_iteration"] == 3
 
 
 def test_writer_outputs_exist():

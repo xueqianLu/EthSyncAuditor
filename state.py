@@ -294,3 +294,16 @@ class GlobalState(TypedDict, total=False):
     discovery_reports: Annotated[list[dict], _merge_lists]
     a_class_feedback: Annotated[list[dict], _replace]
     sparsity_hints: Annotated[list[dict], _replace]
+
+    # ── Per‑workflow iteration (Phase 2 iterates one workflow at a time) ─
+    current_workflow: str                              # workflow_id being processed
+    completed_workflows: Annotated[list[str], _merge_lists]  # finished workflow_ids
+    workflow_diff_reports: Annotated[dict[str, dict], _merge_dicts]  # wf_id → diff_report
+    wf_iteration_history: Annotated[list[dict], _replace]  # per-wf history (resets each wf)
+
+    # ── Phase 3: B-class verification (per-workflow, after convergence) ──
+    verified_b_diffs: Annotated[list[dict], _merge_lists]    # CONFIRMED / DOWNGRADED
+    rejected_b_diffs: Annotated[list[dict], _merge_lists]    # REJECTED (false positives)
+    reclassified_to_a: Annotated[list[dict], _merge_lists]   # RECLASSIFIED B→A
+    verification_evidence: Annotated[dict[str, list], _merge_dicts]  # client → code evidence
+

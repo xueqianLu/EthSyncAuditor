@@ -1,0 +1,2936 @@
+version: 1
+client: teku
+generated_at: '2026-04-09T16:37:22.461088+00:00'
+guards:
+- name: AttestationDataMatchesForAggregation
+  category: committee
+  description: Ensures that individual attestations being aggregated share the same
+    attestation data (source, target, head vote) so they can be combined.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: AttestationIsNotSlashable
+  category: validation
+  description: A check against the slashing protection database confirms that signing
+    a given attestation would not violate a slashing condition (e.g., double-voting
+    or surround-voting).
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: AttesterDutyAssigned
+  category: validator
+  description: Guards that the validator has been assigned an attester duty (committee
+    index and slot) for the current or upcoming slot.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: BeaconNodeIsReachable
+  category: network
+  description: Guards that the validator client has an active and responsive connection
+    to at least one beacon node before performing duties.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: BlockIsNotSlashable
+  category: validator
+  description: Checks the slashing protection database to ensure signing a block at
+    the given slot is not a slashable offense, such as proposing two different blocks
+    for the same slot.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: BlockProductionDataUnavailable
+  category: network
+  description: Essential data required for block production (e.g., attester slashings,
+    deposits) could not be fetched from the beacon node.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: BlockPublishingFailed
+  category: network
+  description: Publishing the beacon block to the network failed.
+  evidence_file: teku/validator/coordinator/BlockDutyService.java
+  evidence_function: performDuty
+  evidence_lines:
+  - 142
+  - 145
+- name: BlockQueueIsFull
+  category: other
+  description: Checks if the block queue for processing incoming blocks is full.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: BlockRequiresBlobSidecars
+  category: validation
+  description: A block being processed is post-Deneb fork and requires corresponding
+    blob sidecars to be downloaded and validated.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: BlockSigningFailed
+  category: validator
+  description: Signing the block with the validator's key failed.
+  evidence_file: teku/validator/coordinator/BlockDutyService.java
+  evidence_function: performDuty
+  evidence_lines:
+  - 132
+  - 135
+- name: BuilderApiRequestTimedOut
+  category: network
+  description: A request to the builder API (e.g., getBuilderPayloadHeader, getPayload)
+    did not receive a response within the allowed time.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: BuilderBidIsExpired
+  category: builder
+  description: The received builder bid has expired and is no longer valid.
+  evidence_file: teku/validator/coordinator/BlockDutyService.java
+  evidence_function: requestBuilderBid
+  evidence_lines:
+  - 162
+  - 167
+- name: BuilderBidIsReceivedAndValid
+  category: validator
+  description: In a proposer-builder separation (PBS) context, verifies a valid and
+    profitable block bid has been received from a builder before the signing deadline.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: BuilderCircuitBreakerIsTripped
+  category: builder
+  description: The builder circuit breaker is tripped, indicating builder network
+    issues.
+  evidence_file: teku/validator/coordinator/BlockDutyService.java
+  evidence_function: requestBuilderBid
+  evidence_lines:
+  - 150
+  - 155
+- name: ExecutionEngineReadyForPayloadAttributes
+  category: exec
+  description: Checks if the EL is prepared to receive forkchoiceUpdated with payload
+    attributes to begin payload building.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ExecutionPayloadIsReady
+  category: exec
+  description: The execution layer has provided a complete and valid execution payload
+    for inclusion in the block.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: GetPayloadTimedOut
+  category: exec
+  description: Detects if the local execution engine fails to return an assembled
+    execution payload within the required timeframe during block production.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: HasAlreadyProposedBlock
+  category: slashing
+  description: Checks if the validator has already proposed a block for the current
+    slot.
+  evidence_file: teku/validator/coordinator/BlockDutyService.java
+  evidence_function: performDuty
+  evidence_lines:
+  - 120
+  - 125
+- name: HasInitialCheckpointConfigured
+  category: mode
+  description: Checks if the node has a trusted initial checkpoint configured, which
+    is required to start checkpoint synchronization.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: HasSuitablePeerForSync
+  category: network
+  description: Checks if there is an available peer that meets criteria to be a synchronization
+    target.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: HasUnprocessedSyncBlocks
+  category: sync
+  description: Checks if there are blocks remaining in the internal queue to be processed
+    as part of synchronization.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsAggregateAttestationUnique
+  category: attestation
+  description: Checks if the constructed aggregate attestation is unique and has not
+    been published before.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsBackfillCompleted
+  category: sync
+  description: Checks if the backfilling of historical blocks from the checkpoint
+    to genesis is finished.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsBackfillNeeded
+  category: sync
+  description: Determines if historical blocks need to be backfilled after checkpoint
+    sync.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsBlockBatchValid
+  category: validation
+  description: Verifies the validity of a batch of blocks received during synchronization
+    against state transition rules, including cryptographic checks.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsBuilderApiEnabled
+  category: mode
+  description: The builder API is configured and enabled for block production.
+  evidence_file: teku/validator/coordinator/BlockDutyService.java
+  evidence_function: requestBuilderBid
+  evidence_lines:
+  - 150
+  - 155
+- name: IsCheckpointDownloadInProgress
+  category: sync
+  description: Checks if the process of downloading checkpoint block and state is
+    currently active.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsCheckpointFetchSuccessful
+  category: sync
+  description: Checks if fetching both block and state for a checkpoint was successful.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsCheckpointSyncEnabled
+  category: mode
+  description: Determines if the checkpoint sync feature is activated in the node's
+    configuration.
+  evidence_file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+  evidence_function: start
+  evidence_lines:
+  - 72
+  - 72
+- name: IsExecutionClientConnected
+  category: exec
+  description: Checks if the Execution Layer client is connected and responsive.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsExecutionClientHealthy
+  category: exec
+  description: Verifies that the Execution Layer client is connected, responsive,
+    and operating without significant errors.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsExecutionClientSynced
+  category: exec
+  description: Checks if the Execution Layer client is synced and available for operations.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsForkchoiceUpdateNeeded
+  category: fork
+  description: Checks if a forkchoiceUpdated call to the execution layer is necessary
+    due to a change in the chain's head, safe, or finalized block.
+  evidence_file: ethereum/forkchoice/src/main/java/org/hyperledger/teku/ethereum/forkchoice/ForkChoice.java
+  evidence_function: onForkChoiceUpdate
+  evidence_lines:
+  - 200
+  - 202
+- name: IsForkchoiceUpdatedResponseValid
+  category: exec
+  description: Checks if the ForkchoiceUpdated response from the EL is valid.
+  evidence_file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+  evidence_function: onForkChoiceUpdate
+  evidence_lines:
+  - 320
+  - 320
+- name: IsGetPayloadResponseValid
+  category: exec
+  description: Checks if the GetPayload response from the EL is valid.
+  evidence_file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/BuilderClient.java
+  evidence_function: getPayload
+  evidence_lines:
+  - 130
+  - 130
+- name: IsGossipAttestationNew
+  category: attestation
+  description: Checks if a received gossip attestation is new and not already processed
+    or queued.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsGossipMessageTopicValid
+  category: network
+  description: Verifies that a received gossip message is on a topic the node is subscribed
+    to and expects.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsGossipMessageWellFormed
+  category: network
+  description: Verifies the basic format, signature, and topic of a received gossip
+    message.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsInitialSyncInProgress
+  category: mode
+  description: Checks if the node is actively engaged in the initial block synchronization
+    phase.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsNodeSyncedToHead
+  category: sync
+  description: Checks if the node's current chain head is sufficiently close to the
+    network's target head.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsNodeTooFarBehind
+  category: other
+  description: Determines if the node's chain head is significantly behind the network.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsOptimisticSyncRetryLimitExceeded
+  category: sync
+  description: Checks if the number of retries for optimistic block processing has
+    exceeded the configured limit.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsParentBlockMissing
+  category: block
+  description: Determines if a received block's parent block is not present in the
+    local chain.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsPayloadAttributesAvailable
+  category: exec
+  description: Checks if PayloadAttributes could be successfully created for the execution
+    layer.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsPayloadStatusInvalid
+  category: exec
+  description: Checks if the execution layer reported an 'INVALID' status for a payload.
+  evidence_file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+  evidence_function: onNewPayload
+  evidence_lines:
+  - 278
+  - 278
+- name: IsPayloadStatusSyncing
+  category: exec
+  description: Checks if the execution layer reported a 'SYNCING' status for a payload.
+  evidence_file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+  evidence_function: onNewPayload
+  evidence_lines:
+  - 274
+  - 274
+- name: IsPayloadStatusValid
+  category: exec
+  description: Checks if the execution layer reported a 'VALID' status for a payload.
+  evidence_file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+  evidence_function: onNewPayload
+  evidence_lines:
+  - 270
+  - 270
+- name: IsPostElectraAttestation
+  category: fork
+  description: Guards whether an attestation uses the post-Electra (EIP-7549) format
+    with a committee_bits field instead of a committee index, determining which validation
+    and aggregation logic to apply.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsRangeRequestSuccessful
+  category: network
+  description: Checks if the BeaconBlocksByRange RPC request successfully returned
+    a valid block batch.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsSyncActive
+  category: sync
+  description: Checks if the node is currently engaged in an active forward synchronization
+    process.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsSyncRangeCompleted
+  category: sync
+  description: Checks if all blocks for the current requested range have been successfully
+    received and processed.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IsSyncTargetReached
+  category: sync
+  description: Checks if the local chain head has reached the network's target slot
+    or epoch during initial sync.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: KzgCeremonyParametersAreLoaded
+  category: block
+  description: Checks if the KZG ceremony parameters required for blob operations
+    are correctly loaded.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: LocalPayloadIsReady
+  category: exec
+  description: The execution engine has completed building a payload in response to
+    an earlier `forkchoiceUpdated` call with payload attributes, making it available
+    for `engine_getPayload`.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: NoAttestationsCollected
+  category: validator
+  description: Determines if the aggregator failed to collect any matching unaggregated
+    attestations from its assigned subnet before the aggregation deadline.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RequiredBlobsAreMissingForProposal
+  category: block
+  description: The block proposal cannot proceed because required blob sidecars are
+    not available locally.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SelectedAsAggregator
+  category: validator
+  description: Verifies via VRF signature computation whether the local validator
+    passes the threshold to be selected to aggregate attestations for its assigned
+    committee and slot.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SlotAlreadySigned
+  category: validator
+  description: Consults the local slashing protection database to ensure that a block
+    or attestation has not already been signed for the current slot.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SlotIsAtAggregationDeadline
+  category: time
+  description: Guards that the current time has reached 2/3 into the slot (8 seconds),
+    which is when aggregators should collect attestations and publish aggregates.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SlotIsAtAttestationDeadline
+  category: time
+  description: Guards that the current time has reached 1/3 into the slot (4 seconds),
+    which is the optimal time for validators to produce and publish attestations.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ValidatorHasProposerDuty
+  category: validator
+  description: The validator has been assigned a proposer duty for the current slot.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ValidatorHasSigningKeyForBlock
+  category: validator
+  description: The validator client has access to the BLS signing key required to
+    sign the proposed block.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ValidatorKeyIsLoaded
+  category: validator
+  description: Guards that the validator's signing key is loaded and available in
+    the key manager before attempting to sign any message (block, attestation, sync
+    committee message).
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+actions:
+- name: AggregateAttestations
+  category: committee
+  description: An aggregator validator combines the signatures and participation bitfields
+    of multiple valid attestations for the same committee into a single aggregate
+    attestation.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ApplyValidatedBlockBatch
+  category: state
+  description: Applies a batch of validated blocks to the node's state and updates
+    fork-choice.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: AssembleBeaconBlock
+  category: block
+  description: A block proposer combines the execution payload, blob KZG commitments,
+    attestations, and other operational data into a complete BeaconBlock structure
+    before signing.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: AttachBlobSidecars
+  category: block
+  description: Constructs and attaches KZG-proven blob sidecars to a post-Deneb block
+    before broadcasting, ensuring blob data is available alongside the block.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: AuthenticateElClient
+  category: exec
+  description: Performs the necessary authentication handshake (e.g., JWT token exchange)
+    with the execution layer client.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: BackfillHistoricalBlocks
+  category: sync
+  description: Downloads and processes historical blocks from genesis up to a checkpoint
+    after a successful forward sync.
+  evidence_file: eth2/sync/src/main/java/tech/pegasys/teku/sync/forward/ForwardSync.java
+  evidence_function: startSyncLoop
+  evidence_lines:
+  - 149
+  - 150
+- name: BlacklistPeerForSync
+  category: network
+  description: Temporarily or permanently blacklists a peer from being selected as
+    a sync target due to repeated failures.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: BufferOrphanedBlock
+  category: block
+  description: Temporarily stores a block that references a parent not yet known to
+    the node, awaiting its parent.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: CallEngineForkchoiceUpdatedV3
+  category: exec
+  description: Calls the Engine API method 'engine_forkchoiceUpdatedV3' on the execution
+    client.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: CallEngineNewPayloadV3
+  category: exec
+  description: Calls the Engine API method 'engine_newPayloadV3' on the execution
+    client.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: CheckSlashingProtectionForBlock
+  category: slashing
+  description: Queries the slashing protection database to ensure the block proposal
+    does not violate any slashing conditions.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: CollectAttestationsForAggregation
+  category: validator
+  description: Gathers individual attestations from the local cache, P2P network,
+    or beacon chain's internal cache for aggregation for a specific committee and
+    attestation data.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: CommitState
+  category: state
+  description: Persists the current beacon state to the database.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ComputeAggregatorSelectionProof
+  category: committee
+  description: Computes and signs the slot signature used as a VRF to determine if
+    the validator is selected as an aggregator for the current slot and committee.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: DropGossipMessage
+  category: network
+  description: Silently discards an incoming gossip message (such as an attestation
+    or block) that evaluates to IGNORE during basic validation, avoiding unnecessary
+    processing or penalization.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: EnqueueBlocksForProcessing
+  category: block
+  description: Adds a batch of received blocks to an internal queue for validation
+    and import.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: EnterOptimisticSyncMode
+  category: mode
+  description: Activates a mode where blocks with SYNCING execution payloads are temporarily
+    accepted while the EL catches up.
+  evidence_file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+  evidence_function: onNewPayload
+  evidence_lines:
+  - 274
+  - 276
+- name: EstablishExecutionClientConnection
+  category: exec
+  description: Initiates the connection handshake with the Execution Layer client.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ExitOptimisticSyncMode
+  category: mode
+  description: Deactivates optimistic sync mode once the execution layer client has
+    caught up and is fully synced.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FailBlockProduction
+  category: validator
+  description: The block production process failed due to unrecoverable issues, such
+    as missing data or persistent errors.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FailCheckpointVerification
+  category: sync
+  description: Handles a failed checkpoint verification, potentially leading to a
+    retry or exit.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FailSyncAndReset
+  category: sync
+  description: Declares synchronization as failed and resets the sync process, potentially
+    looking for a new strategy or target.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FallbackToLocalPayload
+  category: exec
+  description: Abandons the external MEV builder pipeline due to timeout or invalidity
+    and falls back to requesting a locally constructed execution payload from the
+    Execution Client.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FetchAttesterDuties
+  category: validator
+  description: A validator requests its attestation duties for a specific epoch from
+    the beacon node to determine which slot and committee it has been assigned.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FetchCheckpointBlockAndState
+  category: sync
+  description: Fetches both the checkpoint block and its corresponding state from
+    peers or the beacon API, handling retries and peer selection.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FetchCheckpointFromAPI
+  category: sync
+  description: Fetches checkpoint block and state using the Beacon API.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: FinalizeSyncProgress
+  category: sync
+  description: Marks the sync process as complete and performs cleanup.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: GenerateKzgCommitments
+  category: block
+  description: Generates KZG commitments for blobs included in a block proposal, computing
+    the blob sidecar proofs and attaching commitments to the block body (Deneb+).
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: GetBlockTemplate
+  category: exec
+  description: Requests a block template from the execution layer for local payload
+    building.
+  evidence_file: teku/validator/coordinator/BeaconBlockProposer.java
+  evidence_function: produceBlock
+  evidence_lines:
+  - 190
+  - 195
+- name: GetBuilderPayloadHeader
+  category: builder
+  description: Requests a payload header from the builder network.
+  evidence_file: teku/validator/coordinator/BlockDutyService.java
+  evidence_function: requestBuilderBid
+  evidence_lines:
+  - 150
+  - 155
+- name: GetExecutionPayload
+  category: exec
+  description: Requests and retrieves a built execution payload from the Execution
+    Layer, via an engine_getPayload Engine API call.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: GetFullBuilderPayload
+  category: builder
+  description: Requests a full execution payload from the builder network after a
+    bid is accepted.
+  evidence_file: teku/validator/coordinator/BlockDutyService.java
+  evidence_function: requestBuilderBid
+  evidence_lines:
+  - 155
+  - 160
+- name: HandleBlockProposalTimeout
+  category: time
+  description: Manages the scenario where block proposal takes too long.
+  evidence_file: teku/validator/coordinator/BeaconBlockProposer.java
+  evidence_function: produceBlock
+  evidence_lines:
+  - 210
+  - 215
+- name: HandleCheckpointFetchFailure
+  category: sync
+  description: Manages the failure of fetching a checkpoint, including initiating
+    retries with different peers or blacklisting problematic peers.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: HandleELSyncingStatus
+  category: exec
+  description: Manages the scenario where the execution layer reports a 'SYNCING'
+    status for a payload, potentially enabling optimistic sync.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: HandleExecutionClientError
+  category: exec
+  description: Processes errors received from the execution client, potentially leading
+    to status changes or re-attempts.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: HandleExecutionPayloadTimeout
+  category: exec
+  description: Manages the scenario where the execution layer client fails to provide
+    an execution payload within the expected timeframe.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: HandleInvalidPayloadStatus
+  category: exec
+  description: Processes an INVALID payload status from the execution engine by identifying
+    the latest valid hash, invalidating descendant blocks, and rolling back fork-choice
+    head.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ImportBlock
+  category: block
+  description: Validates a received block (signature, state transition, consensus
+    rules), applies it to advance the beacon state, inserts it into fork-choice, and
+    persists to the database.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: IncludeOwnAttestation
+  category: validator
+  description: Ensures the validator's own attestation is included in the aggregate
+    if available, even if not received from the network.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: InitializeForkChoiceFromCheckpoint
+  category: state
+  description: Initializes or resets the node's fork choice store using a trusted
+    finalized checkpoint block and state as the new anchor.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: InitializeSyncState
+  category: sync
+  description: Sets up the initial data structures and parameters for the node's synchronization
+    process.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: InitiateRangeSyncFallback
+  category: sync
+  description: Triggers a fallback to range synchronization when the node detects
+    it is significantly behind the network head.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: LogBuilderBidRejection
+  category: builder
+  description: Records the reason for rejecting a builder bid (e.g., too late, invalid,
+    inferior).
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: LogCheckpointSyncFailure
+  category: sync
+  description: Records details about a failure in the checkpoint synchronization process
+    for debugging.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: LogErrorMessage
+  category: other
+  description: Records an error message to the node's logging system.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: MarkCheckpointSyncComplete
+  category: sync
+  description: Marks the checkpoint synchronization as complete and transitions the
+    node to the next sync phase.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: MarkPeerAsSyncTarget
+  category: network
+  description: Designates a peer as the active synchronization target.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: MonitorBlockProposalProgress
+  category: time
+  description: Tracks the elapsed time and progress of the block proposal process
+    to identify bottlenecks or timeouts.
+  evidence_file: teku/validator/coordinator/BlockDutyService.java
+  evidence_function: performDuty
+  evidence_lines:
+  - 106
+  - 110
+- name: NegotiateEngineApiVersion
+  category: exec
+  description: Initiates the Engine API version negotiation handshake with the Execution
+    Layer client.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: NotifyExecutionClientOfForkChoiceUpdate
+  category: exec
+  description: Notifies the Execution Layer client about the current head, safe, and
+    finalized block hashes, optionally triggering payload building.
+  evidence_file: validator/client/src/main/java/org/hyperledger/teku/validator/client/duties/BlockProductionDuty.java
+  evidence_function: performDuty
+  evidence_lines:
+  - 95
+  - 97
+- name: NotifyExecutionClientOfForkchoiceUpdate
+  category: exec
+  description: Notifies the execution layer of the current fork-choice head, safe,
+    and finalized blocks, optionally triggering payload building.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: PenalizePeer
+  category: peer
+  description: Decreases the reputation of a peer due to sync failures, invalid block
+    responses, timeouts, or propagating invalid gossip.
+  evidence_file: eth2/sync/src/main/java/tech/pegasys/teku/sync/forward/singlepeer/SinglePeerSync.java
+  evidence_function: handleTimeout
+  evidence_lines:
+  - 128
+  - 128
+- name: PersistBlockToSlashingDB
+  category: validator
+  description: Records the proposed block in the slashing protection database to prevent
+    future double proposals.
+  evidence_file: teku/validator/coordinator/BlockDutyService.java
+  evidence_function: performDuty
+  evidence_lines:
+  - 137
+  - 140
+- name: PrepareElectraAttestation
+  category: validator
+  description: Constructs an Electra-format attestation (EIP-7549) with committee
+    index in the attestation body and committee bits rather than in attestation data.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: PreparePayloadAttributes
+  category: exec
+  description: Constructs payload attributes (timestamp, prevRandao, suggestedFeeRecipient,
+    withdrawals) for the forkchoiceUpdated call that initiates EL payload building.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ProcessELForkchoiceUpdatedResponse
+  category: exec
+  description: Processes the response from an engine_forkchoiceUpdated call.
+  evidence_file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+  evidence_function: onForkChoiceUpdate
+  evidence_lines:
+  - 320
+  - 322
+- name: ProcessELNewPayloadResponse
+  category: exec
+  description: Handles the response from engine_newPayload, updating block status.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ProcessGossipAttestation
+  category: attestation
+  description: Processes an attestation received via the gossip network, including
+    initial validation and queuing for fork-choice updates.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ProcessQueuedBlocks
+  category: block
+  description: Processes blocks that have been queued for validation and import into
+    the beacon chain.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ProcessSyncBlockQueue
+  category: block
+  description: Processes blocks that have been queued for validation and import during
+    initial synchronization.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ProduceAttestationData
+  category: validator
+  description: Constructs the AttestationData (source, target, head) for a validator's
+    attestation duty at a given slot and committee.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: PublishAggregateAndProof
+  category: network
+  description: Broadcasts the locally computed aggregate attestation along with its
+    VRF selection proof to the global beacon_aggregate_and_proof gossip topic.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: PublishAttestation
+  category: network
+  description: Broadcasts a signed attestation to the Ethereum network via the beacon
+    node.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: PublishBlobSidecars
+  category: network
+  description: After producing a block with blobs, the proposer broadcasts the corresponding
+    signed blob sidecars to the network via the `blob_sidecar` gossip topic.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: PublishBlock
+  category: network
+  description: After a validator produces and signs a new beacon block, it is broadcast
+    to the network via the global `beacon_block` gossip topic.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: QueryBeaconNodeForAttestationData
+  category: validator
+  description: Requests attestation data (head root, source, target) from the beacon
+    node's REST API for constructing the validator's attestation.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: QueueGossipAttestationForProcessing
+  category: attestation
+  description: Places a received and initially validated gossip attestation into a
+    queue for further processing and aggregation.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: QueueGossipBlockForProcessing
+  category: block
+  description: Places a received and initially validated gossip block into a queue
+    to be processed by the block processing thread.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: QueueMissingParentRequest
+  category: network
+  description: Adds a request for a missing parent block to a queue to be sent to
+    peers.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ReconnectExecutionClient
+  category: exec
+  description: Attempts to re-establish a connection to the execution layer client
+    after a disconnection or detected failure.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RecordBlockProposalMissed
+  category: validator
+  description: Records that a validator's block proposal duty for a specific slot
+    was missed.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RecordSlashingProtectionAttestation
+  category: validator
+  description: Records a signed attestation's source and target epochs in the slashing
+    protection database after successful signing to prevent future slashable attestations.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RejectBlockDueToSlashing
+  category: validator
+  description: Prevents a block from being signed or published if it violates slashing
+    conditions.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RemoveSyncTarget
+  category: sync
+  description: Removes the currently designated synchronization target peer due to
+    unsuitability or disconnection.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ReportCheckpointSyncProgress
+  category: sync
+  description: Reports the current progress of the checkpoint synchronization process
+    to metrics or logs.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ReportInvalidGossipMessage
+  category: network
+  description: Notifies the network layer about an invalid gossip message, potentially
+    leading to peer penalization.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RequestBeaconBlocksByRange
+  category: network
+  description: Sends a BeaconBlocksByRange RPC request to a peer to fetch a batch
+    of sequential blocks during initial/range sync.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RequestBuilderBid
+  category: exec
+  description: Sends an HTTP request to the external MEV relay or builder network
+    to obtain the most profitable execution payload bid for block proposal.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RequestMissingBlocks
+  category: network
+  description: Requests specific blocks by root that were identified as missing from
+    a range synchronization.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: RequestPayloadAttributes
+  category: exec
+  description: Requests payload attributes from the execution client for block building.
+  evidence_file: validator/client/src/main/java/org/hyperledger/teku/validator/client/duties/BlockProductionDuty.java
+  evidence_function: performDuty
+  evidence_lines:
+  - 95
+  - 97
+- name: ResetSyncTarget
+  category: sync
+  description: Clears the current synchronization target, often in preparation for
+    selecting a new one.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ScheduleSlotActions
+  category: time
+  description: Schedules time-based validator actions (attestation at 1/3 slot, aggregation
+    at 2/3 slot, block proposal at slot start) using the slot clock.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SelectBestPayload
+  category: builder
+  description: Chooses between a builder bid payload and a locally constructed payload
+    based on profitability or other criteria.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SelectSyncTarget
+  category: sync
+  description: Identifies and designates a suitable peer to serve as the primary source
+    for block synchronization, and evaluates peer suitability.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SendForkchoiceUpdatedForProposal
+  category: exec
+  description: Sends a forkchoiceUpdated call to the execution layer, potentially
+    including payloadAttributes to trigger payload building for a block proposal.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SendNewPayloadToEL
+  category: exec
+  description: Send a `newPayload` message to the execution layer to trigger validation
+    and import of a new execution payload, potentially including blob versioned hashes.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SetCheckpointAnchor
+  category: state
+  description: Stores the checkpoint anchor.
+  evidence_file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+  evidence_function: initializeForkChoiceAndStartSync
+  evidence_lines:
+  - 240
+  - 242
+- name: SetCheckpointSyncFailureReason
+  category: sync
+  description: Records the reason for a checkpoint synchronization failure.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SetExecutionClientOffline
+  category: exec
+  description: Marks the Execution Layer client as offline or unreachable.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SetTrustedCheckpoint
+  category: sync
+  description: Sets the trusted checkpoint from configuration.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SignAggregateAndProof
+  category: validator
+  description: Generates a BLS signature over the locally combined aggregate attestation
+    to finalize the AggregateAndProof message before broadcasting.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SignAttestation
+  category: validator
+  description: The validator uses its private key to generate a BLS signature for
+    a newly created attestation data object after passing slashing protection checks.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SignBeaconBlock
+  category: validator
+  description: The validator signs the fully assembled (non-blinded) beacon block
+    using its BLS private key before it is published to the network.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SignBlockWithSlashingProtection
+  category: validator
+  description: Signs the beacon block after ensuring it doesn't violate slashing conditions.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: StartInitialSync
+  category: mode
+  description: Initiates the process of initial synchronization, setting up the necessary
+    state and requesting blocks.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: StopInitialSync
+  category: sync
+  description: The initial synchronization service is stopped, transitioning the node
+    to a synced state.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: StoreCheckpointAnchor
+  category: state
+  description: Stores the validated checkpoint block and state as the chain's anchor.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SubmitValidatorProposals
+  category: validator
+  description: Submits the locally signed block and associated blob sidecars to the
+    beacon node for publishing.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SubscribeToSubnet
+  category: network
+  description: Subscribes the beacon node to a specific GossipSub subnet to send,
+    receive, and broadcast attestations for an assigned committee.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: SyncToHeadFromCheckpoint
+  category: sync
+  description: Synchronizes the chain forward from a checkpoint anchor to the current
+    network head.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: TrackOptimisticSyncProgress
+  category: sync
+  description: Monitors the progress of the execution layer during optimistic sync.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: TransitionToHeadSync
+  category: sync
+  description: Transitions the synchronization mechanism to focus on catching up to
+    the network's current head after an initial or checkpoint sync.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: TransitionToRegularSync
+  category: mode
+  description: Transitions the node's synchronization state from initial/range sync
+    to regular gossip-based synchronization.
+  evidence_file: eth2/sync/src/main/java/tech/pegasys/teku/sync/forward/ForwardSync.java
+  evidence_function: startSyncLoop
+  evidence_lines:
+  - 133
+  - 134
+- name: TripBuilderCircuitBreaker
+  category: builder
+  description: Sets the builder circuit breaker to a tripped state, disabling builder
+    API usage temporarily.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: UpdateElClientHealthStatus
+  category: exec
+  description: Periodically updates the internal health status of the Execution Layer
+    client based on recent interactions and responses.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: UpdateExecutionClientStatus
+  category: exec
+  description: Updates the internal state tracking the connection and sync status
+    of the Execution Layer client.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: UpdateExecutionPayloadStatus
+  category: exec
+  description: Updates the status of an execution payload (e.g., PENDING, BUILDING,
+    READY) in internal tracking.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: UpdateForkChoice
+  category: fork
+  description: Applies a newly verified block, attestation, or payload status to the
+    local fork-choice store, recalculating the LMD-GHOST head and resolving any pending
+    weights.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: UpdateForkchoiceState
+  category: fork
+  description: Updates the internal representation of the beacon chain's head, safe,
+    and finalized block hashes.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: UpdateSyncProgress
+  category: state
+  description: Updates the internal sync progress tracker with the latest imported
+    slot, used for stall detection and status reporting.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ValidateAttestationSlashingProtection
+  category: validator
+  description: Checks the validator's attestation against the local slashing protection
+    database for surround votes and double votes before signing.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ValidateCheckpointSignature
+  category: validation
+  description: Verifies the signature of the fetched checkpoint block.
+  evidence_file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+  evidence_function: validateCheckpoint
+  evidence_lines:
+  - 221
+  - 223
+- name: ValidateGossipAttestation
+  category: validation
+  description: Performs gossip-level validation on an attestation including signature
+    verification, committee membership, target epoch, and slot checks.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+- name: ValidateGossipBlock
+  category: validation
+  description: Performs initial, lightweight validation on a block received via gossip
+    before full import.
+  evidence_file: eth2/beacon/src/main/java/tech/pegasys/teku/beacon/sync/SyncService.java
+  evidence_function: onGossipBlock
+  evidence_lines:
+  - 130
+  - 131
+- name: VerifyCheckpoint
+  category: validation
+  description: Performs comprehensive validation of a fetched checkpoint block and
+    state, including their validity and state root consistency.
+  evidence_file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+  evidence_function: validateCheckpoint
+  evidence_lines:
+  - 221
+  - 223
+- name: WaitForSlotFraction
+  category: time
+  description: Waits until a specific fraction of the slot has elapsed (1/3 for attestation,
+    2/3 for aggregation) before performing the scheduled duty.
+  evidence_file: null
+  evidence_function: null
+  evidence_lines: null
+workflows:
+- id: initial_sync
+  name: Initial Synchronization
+  description: Bulk-download blocks from peers via BeaconBlocksByRange RPC. The node
+    selects peers by advertised head_slot, pipelines range requests, validates batches
+    (BLS, state transition, consensus), applies them to advance fork-choice, and loops
+    until the local head reaches the network target slot. Then switches to regular_sync.
+  mode: ''
+  initial_state: initial_sync.initializing
+  states:
+  - id: initial_sync.initializing
+    label: Initializing Initial Sync
+    category: Setup
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - StartInitialSync
+      next_state: initial_sync.determining_sync_state
+      evidence:
+        file: teku/sync/SyncService.java
+        function: start
+        lines:
+        - 166
+        - 169
+  - id: initial_sync.determining_sync_state
+    label: Determining Sync State
+    category: SyncState
+    transitions:
+    - guard: IsInitialSyncInProgress
+      actions: []
+      next_state: initial_sync.finding_sync_target
+      evidence:
+        file: teku/sync/BeaconNodeInitialSyncService.java
+        function: isInitialSyncActive
+        lines:
+        - 129
+    - guard: IsNodeSyncedToHead
+      actions:
+      - StopInitialSync
+      - TransitionToRegularSync
+      next_state: initial_sync.transitioning_to_regular_sync
+      evidence:
+        file: teku/sync/SyncManager.java
+        function: onSyncActiveStatusChanged
+        lines:
+        - 224
+        - 228
+  - id: initial_sync.finding_sync_target
+    label: Finding Sync Target
+    category: PeerSelection
+    transitions:
+    - guard: HasSuitablePeerForSync
+      actions:
+      - SelectSyncTarget
+      - MarkPeerAsSyncTarget
+      next_state: initial_sync.requesting_block_range
+      evidence:
+        file: teku/sync/BeaconNodeInitialSyncService.java
+        function: selectSyncTarget
+        lines:
+        - 183
+        - 199
+    - guard: 'TRUE'
+      actions:
+      - UpdateSyncProgress
+      next_state: initial_sync.finding_sync_target
+      evidence:
+        file: teku/sync/BeaconNodeInitialSyncService.java
+        function: doSync
+        lines:
+        - 94
+        - 96
+  - id: initial_sync.requesting_block_range
+    label: Requesting Block Range
+    category: NetworkRequest
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - RequestBeaconBlocksByRange
+      next_state: initial_sync.processing_range_response
+      evidence:
+        file: teku/sync/BeaconNodeInitialSyncService.java
+        function: requestBlocks
+        lines:
+        - 213
+        - 219
+  - id: initial_sync.processing_range_response
+    label: Processing Range Response
+    category: BlockProcessing
+    transitions:
+    - guard: IsRangeRequestSuccessful
+      actions:
+      - EnqueueBlocksForProcessing
+      next_state: initial_sync.validating_block_batch
+      evidence:
+        file: teku/sync/BeaconNodeInitialSyncService.java
+        function: onBlocksReceived
+        lines:
+        - 231
+        - 233
+    - guard: 'TRUE'
+      actions:
+      - RemoveSyncTarget
+      - FailSyncAndReset
+      next_state: initial_sync.finding_sync_target
+      evidence:
+        file: teku/sync/BeaconNodeInitialSyncService.java
+        function: onBlocksReceived
+        lines:
+        - 235
+        - 237
+  - id: initial_sync.validating_block_batch
+    label: Validating Block Batch
+    category: BlockValidation
+    transitions:
+    - guard: IsBlockBatchValid
+      actions:
+      - EnqueueBlocksForProcessing
+      next_state: initial_sync.applying_blocks
+      evidence:
+        file: teku/sync/BlockProcessor.java
+        function: processBlocks
+        lines:
+        - 104
+        - 106
+    - guard: 'TRUE'
+      actions:
+      - PenalizePeer
+      next_state: initial_sync.handling_sync_failure
+      evidence:
+        file: teku/sync/BlockProcessor.java
+        function: processBlocks
+        lines:
+        - 110
+        - 111
+  - id: initial_sync.applying_blocks
+    label: Applying Blocks
+    category: ChainUpdate
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - ProcessSyncBlockQueue
+      - ApplyValidatedBlockBatch
+      - UpdateSyncProgress
+      next_state: initial_sync.updating_progress
+      evidence:
+        file: teku/sync/BlockProcessor.java
+        function: importValidatedBlock
+        lines:
+        - 135
+        - 136
+  - id: initial_sync.updating_progress
+    label: Updating Sync Progress
+    category: Monitoring
+    transitions:
+    - guard: IsSyncRangeCompleted
+      actions:
+      - TransitionToHeadSync
+      next_state: initial_sync.transitioning_to_head_sync
+      evidence:
+        file: teku/sync/BeaconNodeInitialSyncService.java
+        function: doSync
+        lines:
+        - 100
+        - 101
+    - guard: 'TRUE'
+      actions: []
+      next_state: initial_sync.requesting_block_range
+      evidence:
+        file: teku/sync/BeaconNodeInitialSyncService.java
+        function: doSync
+        lines:
+        - 94
+  - id: initial_sync.transitioning_to_head_sync
+    label: Transitioning to Head Sync
+    category: Completion
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - StopInitialSync
+      - TransitionToRegularSync
+      next_state: initial_sync.transitioning_to_regular_sync
+      evidence:
+        file: teku/sync/SyncManager.java
+        function: onSyncActiveStatusChanged
+        lines:
+        - 224
+        - 228
+  - id: initial_sync.transitioning_to_regular_sync
+    label: Initial Sync Finished
+    category: Completion
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - TransitionToRegularSync
+      next_state: regular_sync.idle_awaiting_gossip
+      evidence:
+        file: teku/sync/SyncManager.java
+        function: onSyncActiveStatusChanged
+        lines:
+        - 224
+        - 228
+  - id: initial_sync.handling_sync_failure
+    label: Handling Sync Failure
+    category: ErrorHandling
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - FailSyncAndReset
+      - ResetSyncTarget
+      - RemoveSyncTarget
+      - BlacklistPeerForSync
+      next_state: initial_sync.finding_sync_target
+      evidence:
+        file: teku/sync/BeaconNodeInitialSyncService.java
+        function: removeSyncTarget
+        lines:
+        - 173
+        - 178
+- id: regular_sync
+  name: Regular Synchronization
+  description: Maintains chain head via GossipSub. Subscribes to beacon_block, beacon_attestation,
+    beacon_aggregate_and_proof, etc. Validates received blocks (slot, proposer, BLS,
+    state transition), imports them, updates fork-choice. Handles missing parents
+    via BeaconBlocksByRoot. Falls back to range sync if too far behind.
+  mode: ''
+  initial_state: regular_sync.idle_awaiting_gossip
+  states:
+  - id: regular_sync.idle_awaiting_gossip
+    label: Idle, Awaiting Gossip
+    category: Ready
+    transitions:
+    - guard: 'TRUE'
+      actions: []
+      next_state: regular_sync.processing_gossip_message
+      evidence:
+        file: teku/networking/eth2/gossip/GossipMessageHandler.java
+        function: onGossipMessage
+        lines:
+        - 64
+        - 67
+  - id: regular_sync.processing_gossip_message
+    label: Processing Incoming Gossip Message
+    category: Gossip
+    transitions:
+    - guard: IsGossipMessageTopicValid
+      actions: []
+      next_state: regular_sync.processing_gossip_block_pre_validation
+      evidence:
+        file: teku/networking/eth2/gossip/GossipMessageHandler.java
+        function: onGossipMessage
+        lines:
+        - 74
+    - guard: IsGossipMessageTopicValid
+      actions: []
+      next_state: regular_sync.processing_gossip_attestation_pre_validation
+      evidence:
+        file: teku/networking/eth2/gossip/GossipMessageHandler.java
+        function: onGossipMessage
+        lines:
+        - 74
+    - guard: IsGossipMessageTopicValid
+      actions: []
+      next_state: regular_sync.processing_gossip_aggregate_pre_validation
+      evidence:
+        file: teku/networking/eth2/gossip/GossipMessageHandler.java
+        function: onGossipMessage
+        lines:
+        - 74
+    - guard: 'TRUE'
+      actions:
+      - DropGossipMessage
+      next_state: regular_sync.idle_awaiting_gossip
+      evidence:
+        file: teku/networking/eth2/gossip/GossipMessageHandler.java
+        function: onGossipMessage
+        lines:
+        - 75
+  - id: regular_sync.processing_gossip_block_pre_validation
+    label: Processing Gossip Block (Pre-Validation)
+    category: BlockProcessing
+    transitions:
+    - guard: IsGossipMessageWellFormed
+      actions: []
+      next_state: regular_sync.validating_gossip_block
+      evidence:
+        file: teku/sync/BlockProcessor.java
+        function: processGossipBlock
+        lines:
+        - 60
+        - 61
+    - guard: 'TRUE'
+      actions:
+      - DropGossipMessage
+      - ReportInvalidGossipMessage
+      next_state: regular_sync.idle_awaiting_gossip
+      evidence:
+        file: teku/sync/BlockProcessor.java
+        function: processGossipBlock
+        lines:
+        - 72
+  - id: regular_sync.validating_gossip_block
+    label: Validating Gossip Block
+    category: BlockValidation
+    transitions:
+    - guard: IsGossipBlockTimely AND IsGossipBlockNew AND IsGossipBlockWithinAcceptableAdvance
+        AND !IsBlockFromFutureSlot AND !IsBlockAlreadyKnown
+      actions:
+      - ValidateGossipBlock
+      next_state: regular_sync.queuing_block_for_import
+      evidence:
+        file: teku/networking/eth2/gossip/GossipBlockManager.java
+        function: onGossipBlock
+        lines:
+        - 113
+        - 115
+    - guard: 'TRUE'
+      actions:
+      - DropGossipMessage
+      - ReportInvalidGossipMessage
+      next_state: regular_sync.idle_awaiting_gossip
+      evidence:
+        file: teku/networking/eth2/gossip/GossipBlockManager.java
+        function: onGossipBlock
+        lines:
+        - 116
+  - id: regular_sync.queuing_block_for_import
+    label: Queuing Block for Import
+    category: BlockProcessing
+    transitions:
+    - guard: '!BlockQueueIsFull'
+      actions:
+      - QueueGossipBlockForProcessing
+      next_state: regular_sync.processing_block_queue
+      evidence:
+        file: teku/sync/BlockProcessor.java
+        function: processGossipBlock
+        lines:
+        - 65
+    - guard: BlockQueueIsFull
+      actions:
+      - DropGossipMessage
+      next_state: regular_sync.idle_awaiting_gossip
+      evidence:
+        file: teku/sync/BlockProcessor.java
+        function: processGossipBlock
+        lines:
+        - 65
+  - id: regular_sync.processing_block_queue
+    label: Processing Block Queue
+    category: BlockProcessing
+    transitions:
+    - guard: HasUnprocessedSyncBlocks
+      actions:
+      - ProcessQueuedBlocks
+      next_state: regular_sync.importing_block
+      evidence:
+        file: teku/sync/BlockProcessor.java
+        function: processBlocks
+        lines:
+        - 106
+    - guard: 'TRUE'
+      actions: []
+      next_state: regular_sync.idle_awaiting_gossip
+      evidence:
+        file: teku/sync/BlockProcessor.java
+        function: processBlocks
+        lines:
+        - 106
+  - id: regular_sync.handling_missing_parent
+    label: Handling Missing Parent
+    category: ErrorHandling
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - QueueMissingParentRequest
+      next_state: regular_sync.idle_awaiting_gossip
+      evidence:
+        file: teku/block/BlockImporter.java
+        function: importBlock
+        lines:
+        - 161
+        - 164
+  - id: regular_sync.importing_block
+    label: Importing Validated Block
+    category: ChainUpdate
+    transitions:
+    - guard: IsParentBlockMissing
+      actions:
+      - RequestMissingBlocks
+      - BufferOrphanedBlock
+      next_state: regular_sync.handling_missing_parent
+      evidence:
+        file: teku/block/BlockImporter.java
+        function: importBlock
+        lines:
+        - 161
+        - 164
+    - guard: 'TRUE'
+      actions:
+      - ImportBlock
+      next_state: regular_sync.updating_forkchoice
+      evidence:
+        file: teku/block/BlockImporter.java
+        function: importBlock
+        lines:
+        - 170
+        - 172
+  - id: regular_sync.updating_forkchoice
+    label: Updating Forkchoice
+    category: ChainUpdate
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - UpdateForkChoice
+      - NotifyExecutionClientOfForkchoiceUpdate
+      next_state: regular_sync.idle_awaiting_gossip
+      evidence:
+        file: teku/forkchoice/ForkChoice.java
+        function: updateForkChoice
+        lines:
+        - 215
+        - 217
+  - id: regular_sync.processing_gossip_attestation_pre_validation
+    label: Processing Gossip Attestation (Pre-Validation)
+    category: AttestationProcessing
+    transitions:
+    - guard: IsGossipMessageWellFormed
+      actions: []
+      next_state: regular_sync.validating_gossip_attestation
+      evidence:
+        file: teku/attestation/AttestationProcessor.java
+        function: processAttestation
+        lines:
+        - 58
+        - 60
+    - guard: 'TRUE'
+      actions:
+      - DropGossipMessage
+      - ReportInvalidGossipMessage
+      next_state: regular_sync.idle_awaiting_gossip
+      evidence:
+        file: teku/attestation/AttestationProcessor.java
+        function: processAttestation
+        lines:
+        - 68
+  - id: regular_sync.validating_gossip_attestation
+    label: Validating Gossip Attestation
+    category: AttestationValidation
+    transitions:
+    - guard: IsGossipAttestationNew
+      actions:
+      - ProcessGossipAttestation
+      next_state: regular_sync.queuing_attestation_for_pool
+      evidence:
+        file: teku/networking/eth2/gossip/GossipAttestationManager.java
+        function: onGossipAttestation
+        lines:
+        - 104
+        - 105
+    - guard: 'TRUE'
+      actions:
+      - DropGossipMessage
+      next_state: regular_sync.idle_awaiting_gossip
+      evidence:
+        file: teku/networking/eth2/gossip/GossipAttestationManager.java
+        function: onGossipAttestation
+        lines:
+        - 106
+  - id: regular_sync.queuing_attestation_for_pool
+    label: Queuing Attestation for Pool
+    category: AttestationProcessing
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - QueueGossipAttestationForProcessing
+      next_state: regular_sync.idle_awaiting_gossip
+      evidence:
+        file: teku/attestation/AttestationPool.java
+        function: addAttestation
+        lines:
+        - 80
+        - 82
+  - id: regular_sync.processing_gossip_aggregate_pre_validation
+    label: Processing Gossip Aggregate (Pre-Validation)
+    category: AttestationProcessing
+    transitions:
+    - guard: IsGossipMessageWellFormed
+      actions: []
+      next_state: regular_sync.validating_gossip_aggregate
+      evidence:
+        file: teku/attestation/AttestationProcessor.java
+        function: processAggregate
+        lines:
+        - 80
+        - 82
+    - guard: 'TRUE'
+      actions:
+      - DropGossipMessage
+      - ReportInvalidGossipMessage
+      next_state: regular_sync.idle_awaiting_gossip
+      evidence:
+        file: teku/attestation/AttestationProcessor.java
+        function: processAggregate
+        lines:
+        - 90
+  - id: regular_sync.validating_gossip_aggregate
+    label: Validating Gossip Aggregate
+    category: AttestationValidation
+    transitions:
+    - guard: IsAggregateAttestationUnique
+      actions:
+      - ValidateGossipAttestation
+      next_state: regular_sync.queuing_attestation_for_pool
+      evidence:
+        file: teku/networking/eth2/gossip/GossipAttestationManager.java
+        function: onGossipAggregate
+        lines:
+        - 118
+        - 119
+    - guard: 'TRUE'
+      actions:
+      - DropGossipMessage
+      next_state: regular_sync.idle_awaiting_gossip
+      evidence:
+        file: teku/networking/eth2/gossip/GossipAttestationManager.java
+        function: onGossipAggregate
+        lines:
+        - 120
+  - id: regular_sync.falling_behind_trigger
+    label: Falling Behind, Initiating Fallback
+    category: SyncFallback
+    transitions:
+    - guard: IsNodeTooFarBehind
+      actions:
+      - InitiateRangeSyncFallback
+      next_state: initial_sync.finding_sync_target
+      evidence:
+        file: teku/sync/SyncManager.java
+        function: checkSyncStatus
+        lines:
+        - 198
+        - 200
+- id: checkpoint_sync
+  name: Checkpoint Sync
+  description: Fast bootstrap from a trusted finalized checkpoint. Fetches finalized
+    state+block via Beacon API or peer, verifies state root against weak subjectivity
+    checkpoint, initializes fork-choice from the anchor, syncs forward to head, then
+    optionally backfills historical blocks toward genesis (reverse range requests,
+    parent-child integrity only).
+  mode: ''
+  initial_state: checkpoint_sync.initializing
+  states:
+  - id: checkpoint_sync.initializing
+    label: Initializing Checkpoint Sync
+    category: Initialization
+    transitions:
+    - guard: IsCheckpointSyncEnabled
+      actions:
+      - InitializeSyncState
+      - SetCheckpointAnchor
+      next_state: checkpoint_sync.fetching_checkpoint
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: start
+        lines:
+        - 72
+        - 72
+    - guard: 'TRUE'
+      actions:
+      - LogErrorMessage
+      next_state: checkpoint_sync.failed
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: start
+        lines:
+        - 72
+        - 72
+  - id: checkpoint_sync.fetching_checkpoint
+    label: Fetching Checkpoint Block and State
+    category: NetworkInteraction
+    transitions:
+    - guard: HasInitialCheckpointConfigured AND IsTrustedCheckpointAvailableInStorage
+      actions:
+      - SetTrustedCheckpoint
+      next_state: checkpoint_sync.verifying_checkpoint
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: performSync
+        lines:
+        - 124
+        - 126
+    - guard: HasInitialCheckpointConfigured
+      actions:
+      - FetchCheckpointFromAPI
+      - ReportCheckpointSyncProgress
+      next_state: checkpoint_sync.downloading_checkpoint
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: performSync
+        lines:
+        - 127
+        - 129
+    - guard: 'TRUE'
+      actions:
+      - LogCheckpointSyncFailure
+      - SetCheckpointSyncFailureReason
+      next_state: checkpoint_sync.failed
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: performSync
+        lines:
+        - 131
+        - 133
+  - id: checkpoint_sync.downloading_checkpoint
+    label: Downloading Checkpoint Block and State
+    category: NetworkInteraction
+    transitions:
+    - guard: IsCheckpointFetchSuccessful
+      actions:
+      - FetchCheckpointBlockAndState
+      next_state: checkpoint_sync.verifying_checkpoint
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: fetchCheckpoint
+        lines:
+        - 191
+        - 193
+    - guard: IsCheckpointDownloadInProgress
+      actions: []
+      next_state: checkpoint_sync.downloading_checkpoint
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: fetchCheckpoint
+        lines:
+        - 180
+        - 180
+    - guard: 'TRUE'
+      actions:
+      - HandleCheckpointFetchFailure
+      - SetCheckpointSyncFailureReason
+      next_state: checkpoint_sync.failed
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: fetchCheckpoint
+        lines:
+        - 195
+        - 197
+  - id: checkpoint_sync.verifying_checkpoint
+    label: Verifying Checkpoint
+    category: Validation
+    transitions:
+    - guard: CheckpointBlockIsValid AND CheckpointStateIsValid AND IsCheckpointStateRootValid
+      actions:
+      - VerifyCheckpoint
+      - ValidateCheckpointSignature
+      next_state: checkpoint_sync.initializing_forkchoice
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: validateCheckpoint
+        lines:
+        - 221
+        - 223
+    - guard: 'TRUE'
+      actions:
+      - FailCheckpointVerification
+      - SetCheckpointSyncFailureReason
+      next_state: checkpoint_sync.failed
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: validateCheckpoint
+        lines:
+        - 225
+        - 227
+  - id: checkpoint_sync.initializing_forkchoice
+    label: Initializing Forkchoice
+    category: ForkChoiceManagement
+    transitions:
+    - guard: IsCheckpointAnchorSet AND HasValidForkChoiceState
+      actions:
+      - InitializeForkChoiceFromCheckpoint
+      - StoreCheckpointAnchor
+      - UpdateForkchoiceState
+      - CommitState
+      next_state: checkpoint_sync.syncing_to_head
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: initializeForkChoiceAndStartSync
+        lines:
+        - 240
+        - 242
+    - guard: 'TRUE'
+      actions:
+      - LogCheckpointSyncFailure
+      - SetCheckpointSyncFailureReason
+      next_state: checkpoint_sync.failed
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: initializeForkChoiceAndStartSync
+        lines:
+        - 240
+        - 242
+  - id: checkpoint_sync.syncing_to_head
+    label: Syncing to Head from Checkpoint
+    category: SyncManagement
+    transitions:
+    - guard: IsSyncTargetReached
+      actions:
+      - FinalizeSyncProgress
+      - SyncToHeadFromCheckpoint
+      next_state: checkpoint_sync.checking_backfill
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: startForwardSync
+        lines:
+        - 145
+        - 147
+    - guard: IsSyncActive
+      actions:
+      - SyncToHeadFromCheckpoint
+      next_state: checkpoint_sync.syncing_to_head
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: startForwardSync
+        lines:
+        - 145
+        - 147
+    - guard: 'TRUE'
+      actions:
+      - LogCheckpointSyncFailure
+      - SetCheckpointSyncFailureReason
+      next_state: checkpoint_sync.failed
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: startForwardSync
+        lines:
+        - 145
+        - 147
+  - id: checkpoint_sync.checking_backfill
+    label: Checking for Backfill
+    category: SyncManagement
+    transitions:
+    - guard: IsBackfillNeeded
+      actions: []
+      next_state: checkpoint_sync.backfilling_historical_blocks
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: performSync
+        lines:
+        - 165
+        - 165
+    - guard: 'TRUE'
+      actions: []
+      next_state: checkpoint_sync.completed
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: performSync
+        lines:
+        - 173
+        - 174
+  - id: checkpoint_sync.backfilling_historical_blocks
+    label: Backfilling Historical Blocks
+    category: SyncManagement
+    transitions:
+    - guard: IsBackfillCompleted
+      actions:
+      - MarkCheckpointSyncComplete
+      - TransitionToRegularSync
+      next_state: checkpoint_sync.completed
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: performSync
+        lines:
+        - 175
+        - 175
+    - guard: 'TRUE'
+      actions:
+      - BackfillHistoricalBlocks
+      next_state: checkpoint_sync.backfilling_historical_blocks
+      evidence:
+        file: sync/src/main/java/org/hyperledger/teku/sync/forward/CheckpointSyncService.java
+        function: performSync
+        lines:
+        - 173
+        - 174
+  - id: checkpoint_sync.completed
+    label: Checkpoint Sync Completed
+    category: Finalization
+    transitions: []
+  - id: checkpoint_sync.failed
+    label: Checkpoint Sync Failed
+    category: ErrorHandling
+    transitions: []
+- id: attestation_generate
+  name: Attestation Generation
+  description: 'Validator attestation duty: fetch committee assignment, wait until
+    1/3 into slot, get attestation data, build attestation with committee bit, sign
+    with BLS key (slashing protection), publish to attestation subnet. Post-Electra
+    uses EIP-7549 format.'
+  mode: expanded
+  initial_state: attestation_generate.awaiting_slot
+  states:
+  - id: attestation_generate.awaiting_slot
+    label: Awaiting Attestation Slot
+    category: scheduling
+    transitions:
+    - guard: AttesterDutyAssigned
+      actions:
+      - FetchAttesterDuties
+      - SubscribeToSubnet
+      - ScheduleSlotActions
+      next_state: attestation_generate.waiting_one_third
+      evidence: null
+  - id: attestation_generate.waiting_one_third
+    label: Waiting for 1/3 Slot (4 seconds)
+    category: timing
+    transitions:
+    - guard: SlotIsAtAttestationDeadline
+      actions:
+      - WaitForSlotFraction
+      next_state: attestation_generate.fetching_data
+      evidence: null
+  - id: attestation_generate.fetching_data
+    label: Fetching Attestation Data from BN
+    category: network
+    transitions:
+    - guard: BeaconNodeIsReachable
+      actions:
+      - QueryBeaconNodeForAttestationData
+      - ProduceAttestationData
+      next_state: attestation_generate.creating_attestation
+      evidence: null
+    - guard: 'TRUE'
+      actions: []
+      next_state: attestation_generate.duty_skipped
+      evidence: null
+  - id: attestation_generate.creating_attestation
+    label: Creating Attestation
+    category: processing
+    transitions:
+    - guard: IsPostElectraAttestation
+      actions:
+      - PrepareElectraAttestation
+      next_state: attestation_generate.checking_slashing
+      evidence: null
+    - guard: 'TRUE'
+      actions: []
+      next_state: attestation_generate.checking_slashing
+      evidence: null
+  - id: attestation_generate.checking_slashing
+    label: Checking Slashing Protection
+    category: validation
+    transitions:
+    - guard: AttestationIsNotSlashable
+      actions:
+      - ValidateAttestationSlashingProtection
+      next_state: attestation_generate.signing
+      evidence: null
+    - guard: SlotAlreadySigned
+      actions: []
+      next_state: attestation_generate.duty_skipped
+      evidence: null
+  - id: attestation_generate.signing
+    label: Signing Attestation
+    category: crypto
+    transitions:
+    - guard: ValidatorKeyIsLoaded
+      actions:
+      - SignAttestation
+      - RecordSlashingProtectionAttestation
+      next_state: attestation_generate.publishing
+      evidence: null
+  - id: attestation_generate.publishing
+    label: Publishing Attestation to Subnet
+    category: network
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - PublishAttestation
+      next_state: attestation_generate.published
+      evidence: null
+  - id: attestation_generate.published
+    label: Attestation Published
+    category: terminal
+    transitions: []
+  - id: attestation_generate.duty_skipped
+    label: Attestation Duty Skipped
+    category: terminal
+    transitions: []
+- id: block_generate
+  name: Block Generate
+  description: ''
+  mode: ''
+  initial_state: ''
+  states:
+  - id: block_generate.idle
+    label: Block Duty Idle
+    category: Validator
+    transitions:
+    - guard: ValidatorHasProposerDuty
+      actions:
+      - SubmitValidatorProposals
+      - MonitorBlockProposalProgress
+      next_state: block_generate.prepare_payload_attributes
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: performDuty
+        lines:
+        - 106
+        - 110
+  - id: block_generate.prepare_payload_attributes
+    label: Preparing Execution Payload Attributes
+    category: Execution
+    transitions:
+    - guard: ExecutionEngineReadyForPayloadAttributes
+      actions:
+      - PreparePayloadAttributes
+      - SendForkchoiceUpdatedForProposal
+      next_state: block_generate.select_payload_source
+      evidence:
+        file: teku/validator/coordinator/BeaconBlockProposer.java
+        function: produceBlock
+        lines:
+        - 180
+        - 185
+  - id: block_generate.select_payload_source
+    label: Selecting Payload Source (Builder/Local)
+    category: Builder
+    transitions:
+    - guard: IsBuilderApiEnabled
+      actions: []
+      next_state: block_generate.check_builder_circuit_breaker
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: requestBuilderBid
+        lines:
+        - 150
+        - 155
+    - guard: 'TRUE'
+      actions:
+      - FallbackToLocalPayload
+      - GetBlockTemplate
+      next_state: block_generate.get_local_payload
+      evidence:
+        file: teku/validator/coordinator/BeaconBlockProposer.java
+        function: produceBlock
+        lines:
+        - 190
+        - 195
+  - id: block_generate.check_builder_circuit_breaker
+    label: Checking Builder Circuit Breaker
+    category: Builder
+    transitions:
+    - guard: BuilderCircuitBreakerIsTripped
+      actions:
+      - FallbackToLocalPayload
+      - GetBlockTemplate
+      next_state: block_generate.get_local_payload
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: requestBuilderBid
+        lines:
+        - 150
+        - 155
+    - guard: 'TRUE'
+      actions:
+      - RequestBuilderBid
+      - GetBuilderPayloadHeader
+      next_state: block_generate.request_builder_bid
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: requestBuilderBid
+        lines:
+        - 150
+        - 155
+  - id: block_generate.request_builder_bid
+    label: Requesting Builder Bid
+    category: Builder
+    transitions:
+    - guard: BuilderApiRequestTimedOut
+      actions:
+      - TripBuilderCircuitBreaker
+      - LogBuilderBidRejection
+      - FallbackToLocalPayload
+      next_state: block_generate.builder_fallback
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: requestBuilderBid
+        lines:
+        - 162
+        - 167
+    - guard: BuilderBidIsExpired
+      actions:
+      - TripBuilderCircuitBreaker
+      - LogBuilderBidRejection
+      - FallbackToLocalPayload
+      next_state: block_generate.builder_fallback
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: requestBuilderBid
+        lines:
+        - 162
+        - 167
+    - guard: BuilderBidIsReceivedAndValid
+      actions:
+      - SelectBestPayload
+      - GetFullBuilderPayload
+      next_state: block_generate.get_builder_payload
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: requestBuilderBid
+        lines:
+        - 155
+        - 160
+    - guard: 'TRUE'
+      actions:
+      - LogBuilderBidRejection
+      - FallbackToLocalPayload
+      next_state: block_generate.builder_fallback
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: requestBuilderBid
+        lines:
+        - 162
+        - 167
+  - id: block_generate.builder_fallback
+    label: Falling Back to Local Payload
+    category: Builder
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - FallbackToLocalPayload
+      - GetBlockTemplate
+      next_state: block_generate.get_local_payload
+      evidence:
+        file: teku/validator/coordinator/BeaconBlockProposer.java
+        function: produceBlock
+        lines:
+        - 190
+        - 195
+  - id: block_generate.get_local_payload
+    label: Getting Local Execution Payload
+    category: Execution
+    transitions:
+    - guard: GetPayloadTimedOut
+      actions:
+      - FailBlockProduction
+      - HandleBlockProposalTimeout
+      next_state: block_generate.duty_missed
+      evidence:
+        file: teku/validator/coordinator/BeaconBlockProposer.java
+        function: produceBlock
+        lines:
+        - 210
+        - 215
+    - guard: LocalPayloadIsReady
+      actions:
+      - GetExecutionPayload
+      next_state: block_generate.assemble_block
+      evidence:
+        file: teku/validator/coordinator/BeaconBlockProposer.java
+        function: produceBlock
+        lines:
+        - 200
+        - 205
+  - id: block_generate.get_builder_payload
+    label: Getting Full Builder Payload
+    category: Builder
+    transitions:
+    - guard: GetPayloadTimedOut
+      actions:
+      - FailBlockProduction
+      - HandleBlockProposalTimeout
+      next_state: block_generate.duty_missed
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: getPayload
+        lines:
+        - 190
+        - 195
+    - guard: ExecutionPayloadIsReady
+      actions:
+      - GetFullBuilderPayload
+      next_state: block_generate.assemble_block
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: getPayload
+        lines:
+        - 190
+        - 195
+  - id: block_generate.assemble_block
+    label: Assembling Beacon Block
+    category: Block
+    transitions:
+    - guard: BlockProductionDataUnavailable
+      actions:
+      - FailBlockProduction
+      next_state: block_generate.duty_missed
+      evidence:
+        file: teku/validator/coordinator/BeaconBlockProposer.java
+        function: produceBlock
+        lines:
+        - 226
+        - 231
+    - guard: BlockRequiresBlobSidecars
+      actions:
+      - AssembleBeaconBlock
+      - GenerateKzgCommitments
+      next_state: block_generate.generate_blobs
+      evidence:
+        file: teku/validator/coordinator/BeaconBlockProposer.java
+        function: produceBlock
+        lines:
+        - 235
+        - 240
+    - guard: 'TRUE'
+      actions:
+      - AssembleBeaconBlock
+      next_state: block_generate.slashing_check
+      evidence:
+        file: teku/validator/coordinator/BeaconBlockProposer.java
+        function: produceBlock
+        lines:
+        - 235
+        - 240
+  - id: block_generate.generate_blobs
+    label: Generating Blob KZG Commitments
+    category: Block
+    transitions:
+    - guard: KzgCeremonyParametersAreLoaded
+      actions:
+      - GenerateKzgCommitments
+      - AttachBlobSidecars
+      next_state: block_generate.slashing_check
+      evidence:
+        file: teku/validator/coordinator/BeaconBlockProposer.java
+        function: produceBlock
+        lines:
+        - 240
+        - 245
+    - guard: RequiredBlobsAreMissingForProposal
+      actions:
+      - FailBlockProduction
+      next_state: block_generate.duty_missed
+      evidence:
+        file: teku/validator/coordinator/BeaconBlockProposer.java
+        function: produceBlock
+        lines:
+        - 255
+        - 260
+  - id: block_generate.slashing_check
+    label: Slashing Protection Check
+    category: Slashing
+    transitions:
+    - guard: HasAlreadyProposedBlock
+      actions:
+      - RejectBlockDueToSlashing
+      - FailBlockProduction
+      next_state: block_generate.duty_missed
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: performDuty
+        lines:
+        - 120
+        - 125
+    - guard: BlockIsNotSlashable
+      actions:
+      - CheckSlashingProtectionForBlock
+      - SignBeaconBlock
+      next_state: block_generate.sign_block
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: performDuty
+        lines:
+        - 127
+        - 130
+  - id: block_generate.sign_block
+    label: Signing Block
+    category: Validator
+    transitions:
+    - guard: BlockSigningFailed
+      actions:
+      - FailBlockProduction
+      next_state: block_generate.duty_missed
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: performDuty
+        lines:
+        - 132
+        - 135
+    - guard: ValidatorHasSigningKeyForBlock
+      actions:
+      - SignBlockWithSlashingProtection
+      - PersistBlockToSlashingDB
+      next_state: block_generate.publish_block
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: performDuty
+        lines:
+        - 137
+        - 140
+  - id: block_generate.publish_block
+    label: Publishing Block and Blobs
+    category: Network
+    transitions:
+    - guard: BlockPublishingFailed
+      actions:
+      - RecordBlockProposalMissed
+      next_state: block_generate.duty_missed
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: performDuty
+        lines:
+        - 142
+        - 145
+    - guard: 'TRUE'
+      actions:
+      - PublishBlock
+      - PublishBlobSidecars
+      next_state: block_generate.idle
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: performDuty
+        lines:
+        - 147
+        - 150
+  - id: block_generate.duty_missed
+    label: Block Duty Missed
+    category: Validator
+    transitions:
+    - guard: 'TRUE'
+      actions: []
+      next_state: block_generate.idle
+      evidence:
+        file: teku/validator/coordinator/BlockDutyService.java
+        function: performDuty
+        lines:
+        - 142
+        - 145
+- id: aggregate
+  name: Attestation Aggregation
+  description: 'Aggregator role: check VRF-based aggregator selection, subscribe to
+    committee attestation subnet, wait until 2/3 into slot, collect individual attestations,
+    compute AggregateAndProof, sign and publish to global topic.'
+  mode: expanded
+  initial_state: aggregate.checking_selection
+  states:
+  - id: aggregate.checking_selection
+    label: Checking Aggregator Selection
+    category: evaluation
+    transitions:
+    - guard: SelectedAsAggregator
+      actions:
+      - ComputeAggregatorSelectionProof
+      - SubscribeToSubnet
+      next_state: aggregate.waiting_two_thirds
+      evidence: null
+    - guard: 'TRUE'
+      actions: []
+      next_state: aggregate.not_selected
+      evidence: null
+  - id: aggregate.waiting_two_thirds
+    label: Waiting for 2/3 Slot (8 seconds)
+    category: timing
+    transitions:
+    - guard: SlotIsAtAggregationDeadline
+      actions:
+      - WaitForSlotFraction
+      next_state: aggregate.collecting_attestations
+      evidence: null
+  - id: aggregate.collecting_attestations
+    label: Collecting Attestations from Pool
+    category: processing
+    transitions:
+    - guard: NoAttestationsCollected
+      actions: []
+      next_state: aggregate.no_attestations
+      evidence: null
+    - guard: 'TRUE'
+      actions:
+      - CollectAttestationsForAggregation
+      - IncludeOwnAttestation
+      next_state: aggregate.aggregating
+      evidence: null
+  - id: aggregate.aggregating
+    label: Aggregating Attestations
+    category: processing
+    transitions:
+    - guard: AttestationDataMatchesForAggregation
+      actions:
+      - AggregateAttestations
+      next_state: aggregate.signing
+      evidence: null
+  - id: aggregate.signing
+    label: Signing AggregateAndProof
+    category: crypto
+    transitions:
+    - guard: ValidatorKeyIsLoaded
+      actions:
+      - SignAggregateAndProof
+      next_state: aggregate.publishing
+      evidence: null
+  - id: aggregate.publishing
+    label: Publishing AggregateAndProof
+    category: network
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - PublishAggregateAndProof
+      next_state: aggregate.published
+      evidence: null
+  - id: aggregate.published
+    label: Aggregate Published
+    category: terminal
+    transitions: []
+  - id: aggregate.not_selected
+    label: Not Selected as Aggregator
+    category: terminal
+    transitions: []
+  - id: aggregate.no_attestations
+    label: No Attestations Collected (Skipped)
+    category: terminal
+    transitions: []
+- id: execute_layer_relation
+  name: Execution Layer Relation
+  description: 'CL↔EL via Engine API: (a) engine_newPayload sends execution payload
+    for validation → VALID/INVALID/SYNCING; (b) engine_forkchoiceUpdated notifies
+    EL of head/safe/finalized (optionally triggers payload building); (c) optimistic
+    sync when EL is syncing — import blocks without full EL validation; (d) on INVALID,
+    invalidate block + descendants and rollback fork-choice head.'
+  mode: ''
+  initial_state: execute_layer_relation.initializing
+  states:
+  - id: execute_layer_relation.initializing
+    label: Initializing EL Connection
+    category: Initialization
+    transitions:
+    - guard: IsExecutionClientConnected
+      actions:
+      - EstablishExecutionClientConnection
+      - AuthenticateElClient
+      - NegotiateEngineApiVersion
+      - UpdateElClientHealthStatus
+      next_state: execute_layer_relation.operational
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/web3j/ExecutionClientWeb3jClient.java
+        function: start
+        lines:
+        - 100
+        - 102
+  - id: execute_layer_relation.operational
+    label: EL Client Operational
+    category: ConnectionManagement
+    transitions:
+    - guard: IsForkchoiceUpdateNeeded
+      actions: []
+      next_state: execute_layer_relation.notifying_forkchoice_update
+      evidence:
+        file: ethereum/forkchoice/src/main/java/org/hyperledger/teku/ethereum/forkchoice/ForkChoice.java
+        function: onForkChoiceUpdate
+        lines:
+        - 200
+        - 202
+    - guard: IsPayloadAttributesAvailable
+      actions: []
+      next_state: execute_layer_relation.requesting_payload_attributes
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/BuilderClient.java
+        function: getPayload
+        lines:
+        - 120
+        - 122
+    - guard: IsExecutionClientHealthy
+      actions:
+      - UpdateElClientHealthStatus
+      next_state: execute_layer_relation.operational
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: checkHealth
+        lines:
+        - 200
+        - 202
+  - id: execute_layer_relation.notifying_forkchoice_update
+    label: Notifying EL of Forkchoice Update
+    category: ForkChoiceManagement
+    transitions:
+    - guard: IsForkchoiceUpdateNeeded
+      actions:
+      - NotifyExecutionClientOfForkChoiceUpdate
+      - CallEngineForkchoiceUpdatedV3
+      - UpdateExecutionClientStatus
+      next_state: execute_layer_relation.handling_fcu_response
+      evidence:
+        file: ethereum/forkchoice/src/main/java/org/hyperledger/teku/ethereum/forkchoice/ForkChoice.java
+        function: onForkChoiceUpdate
+        lines:
+        - 205
+        - 207
+    - guard: 'TRUE'
+      actions:
+      - HandleExecutionClientError
+      - LogErrorMessage
+      next_state: execute_layer_relation.operational
+      evidence:
+        file: ethereum/forkchoice/src/main/java/org/hyperledger/teku/ethereum/forkchoice/ForkChoice.java
+        function: onForkChoiceUpdate
+        lines:
+        - 209
+        - 211
+  - id: execute_layer_relation.handling_fcu_response
+    label: Handling ForkchoiceUpdated Response
+    category: PayloadManagement
+    transitions:
+    - guard: IsForkchoiceUpdatedResponseValid
+      actions:
+      - ProcessELForkchoiceUpdatedResponse
+      next_state: execute_layer_relation.operational
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: onForkChoiceUpdate
+        lines:
+        - 320
+        - 322
+    - guard: IsPayloadStatusInvalid
+      actions:
+      - HandleInvalidPayloadStatus
+      - LogErrorMessage
+      next_state: execute_layer_relation.operational
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: onNewPayload
+        lines:
+        - 278
+        - 278
+    - guard: 'TRUE'
+      actions:
+      - HandleExecutionClientError
+      - LogErrorMessage
+      next_state: execute_layer_relation.operational
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: onForkChoiceUpdate
+        lines:
+        - 320
+        - 320
+  - id: execute_layer_relation.sending_new_payload
+    label: Sending New Payload to EL
+    category: PayloadManagement
+    transitions:
+    - guard: HasExecutionPayload AND IsExecutionPayloadValidForBlock
+      actions:
+      - SendNewPayloadToEL
+      - CallEngineNewPayloadV3
+      next_state: execute_layer_relation.handling_payload_status
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: onNewPayload
+        lines:
+        - 260
+        - 262
+    - guard: 'TRUE'
+      actions:
+      - HandleExecutionClientError
+      - LogErrorMessage
+      next_state: execute_layer_relation.operational
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: onNewPayload
+        lines:
+        - 260
+        - 262
+  - id: execute_layer_relation.handling_payload_status
+    label: Handling EL Payload Status
+    category: PayloadManagement
+    transitions:
+    - guard: IsPayloadStatusValid
+      actions:
+      - ProcessELNewPayloadResponse
+      - UpdateExecutionPayloadStatus
+      next_state: execute_layer_relation.operational
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: onNewPayload
+        lines:
+        - 270
+        - 272
+    - guard: IsPayloadStatusSyncing
+      actions:
+      - HandleELSyncingStatus
+      - EnterOptimisticSyncMode
+      next_state: execute_layer_relation.optimistic_sync_mode
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: onNewPayload
+        lines:
+        - 274
+        - 276
+    - guard: IsOptimisticSyncRetryLimitExceeded
+      actions:
+      - HandleInvalidPayloadStatus
+      - LogErrorMessage
+      next_state: execute_layer_relation.operational
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: onNewPayload
+        lines:
+        - 278
+        - 278
+    - guard: 'TRUE'
+      actions:
+      - HandleExecutionClientError
+      - LogErrorMessage
+      next_state: execute_layer_relation.operational
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: onNewPayload
+        lines:
+        - 270
+        - 272
+  - id: execute_layer_relation.requesting_payload_attributes
+    label: Requesting Payload Attributes
+    category: PayloadManagement
+    transitions:
+    - guard: IsExecutionClientConnected
+      actions:
+      - RequestPayloadAttributes
+      next_state: execute_layer_relation.retrieving_payload
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: onNewPayload
+        lines:
+        - 260
+        - 262
+    - guard: 'TRUE'
+      actions:
+      - HandleExecutionClientError
+      - LogErrorMessage
+      next_state: execute_layer_relation.operational
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: onNewPayload
+        lines:
+        - 260
+        - 262
+  - id: execute_layer_relation.retrieving_payload
+    label: Retrieving Execution Payload
+    category: PayloadManagement
+    transitions:
+    - guard: IsGetPayloadResponseValid
+      actions:
+      - GetExecutionPayload
+      next_state: execute_layer_relation.operational
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/BuilderClient.java
+        function: getPayload
+        lines:
+        - 130
+        - 130
+    - guard: 'TRUE'
+      actions:
+      - HandleExecutionPayloadTimeout
+      - LogErrorMessage
+      next_state: execute_layer_relation.operational
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/BuilderClient.java
+        function: getPayload
+        lines:
+        - 134
+        - 136
+  - id: execute_layer_relation.handling_el_error
+    label: Handling EL Errors
+    category: ErrorHandling
+    transitions:
+    - guard: 'TRUE'
+      actions:
+      - HandleExecutionClientError
+      - ReconnectExecutionClient
+      - SetExecutionClientOffline
+      - LogErrorMessage
+      next_state: execute_layer_relation.failed
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: handleExecutionClientException
+        lines:
+        - 400
+        - 402
+  - id: execute_layer_relation.optimistic_sync_mode
+    label: Optimistic Sync Mode
+    category: SyncManagement
+    transitions:
+    - guard: IsExecutionClientSynced
+      actions:
+      - ExitOptimisticSyncMode
+      - UpdateElClientHealthStatus
+      next_state: execute_layer_relation.operational
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: onNewPayload
+        lines:
+        - 274
+        - 276
+    - guard: IsOptimisticSyncRetryLimitExceeded
+      actions:
+      - HandleInvalidPayloadStatus
+      - LogErrorMessage
+      - ExitOptimisticSyncMode
+      next_state: execute_layer_relation.operational
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: onNewPayload
+        lines:
+        - 278
+        - 278
+    - guard: 'TRUE'
+      actions:
+      - TrackOptimisticSyncProgress
+      next_state: execute_layer_relation.optimistic_sync_mode
+      evidence:
+        file: ethereum/executionclient/src/main/java/org/hyperledger/teku/ethereum/executionclient/ExecutionLayerManagerImpl.java
+        function: onNewPayload
+        lines:
+        - 276
+        - 276
+  - id: execute_layer_relation.completed
+    label: EL Interaction Completed
+    category: Finalization
+    transitions: []
+  - id: execute_layer_relation.failed
+    label: EL Interaction Failed
+    category: Finalization
+    transitions: []

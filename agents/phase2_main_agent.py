@@ -293,18 +293,20 @@ def build_phase2_main_agent(llm=None, callbacks=None):
     """
 
     def _run(state: dict[str, Any]) -> dict[str, Any]:
-        """Compare client LSGs, classify diffs, compute logic_diff_rate."""
+        """Compare client LSGs for ONE workflow, classify diffs."""
         client_lsgs = state.get("client_lsgs", {})
         iteration = state.get("phase2_iteration", 1)
+        current_wf = state.get("current_workflow", "")
         guards = state.get("guards", [])
         actions = state.get("actions", [])
 
-        # Compute per-client sparsity hints for sub-agents
+        # Compute per-client sparsity hints (scoped to current workflow)
         sparsity_hints = compute_lsg_sparsity(client_lsgs)
+        sparsity_hints = [h for h in sparsity_hints if h.get("workflow_id") == current_wf]
         if sparsity_hints:
             logger.info(
-                "[phase2_main_agent] %d sparse workflows detected",
-                len(sparsity_hints),
+                "[phase2_main_agent] %d sparse entries for workflow=%s",
+                len(sparsity_hints), current_wf,
             )
 
         # ── LLM path ───────────────────────────────────────────────────
@@ -313,6 +315,7 @@ def build_phase2_main_agent(llm=None, callbacks=None):
             _prompt = template.render(
                 client_lsgs=client_lsgs,
                 iteration=iteration,
+                current_workflow=current_wf,
                 guard_names=[g.get("name", "?") for g in guards],
                 action_names=[a.get("name", "?") for a in actions],
             )
@@ -359,10 +362,10 @@ def build_phase2_main_agent(llm=None, callbacks=None):
 
         # ── Deterministic comparison fallback ───────────────────────────
         logger.info(
-            "[phase2_main_agent] deterministic comparison of %d clients (iter=%d)",
-            len(client_lsgs), iteration,
+            "[phase2_main_agent] deterministic comparison for workflow=%s (%d clients, iter=%d)",
+            current_wf, len(client_lsgs), iteration,
         )
-        return _deterministic_compare(client_lsgs, sparsity_hints)
+        return _deterministic_compare(client_lsgs, sparsity_hints, current_wf)
 
     return _run
 
@@ -370,8 +373,12 @@ def build_phase2_main_agent(llm=None, callbacks=None):
 def _deterministic_compare(
     client_lsgs: dict[str, dict],
     sparsity_hints: list[dict],
+    current_wf: str = "",
 ) -> dict[str, Any]:
     """Deterministic A/B diff when no LLM is available.
+
+    When *current_wf* is non-empty, only that single workflow is compared.
+    Otherwise all workflows are compared (legacy behaviour).
 
     Comparison is done per ``(workflow_id, state_category)`` group.
     Within each group, transitions are matched across clients in three
@@ -391,6 +398,9 @@ def _deterministic_compare(
     total_items = 0
     all_clients = set(client_lsgs.keys())
 
+    # Determine which workflow IDs to compare
+    target_wf_ids = [current_wf] if current_wf else WORKFLOW_IDS
+
     # ── 1. Index: wf_id → state_cat → client → [(guard, actions_fs, next_cat, evidence)]
     wf_cat_idx: dict[str, dict[str, dict[str, list[tuple]]]] = defaultdict(
         lambda: defaultdict(lambda: defaultdict(list))
@@ -399,6 +409,8 @@ def _deterministic_compare(
     for client, lsg in client_lsgs.items():
         for wf in lsg.get("workflows", []):
             wf_id = wf["id"]
+            if wf_id not in target_wf_ids:
+                continue
             for st in wf.get("states", []):
                 cat = st.get("category", "unknown")
                 for tr in st.get("transitions", []):
@@ -586,7 +598,7 @@ def _deterministic_compare(
                     b_diffs.append(diff_entry)
 
     # ── 3. Check for stub workflows ────────────────────────────────────
-    for wf_id in WORKFLOW_IDS:
+    for wf_id in target_wf_ids:
         clients_with_wf = set()
         for client, lsg in client_lsgs.items():
             for wf in lsg.get("workflows", []):

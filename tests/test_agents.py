@@ -108,82 +108,44 @@ class TestPhase2SubAgent:
         agent_fn = build_phase2_sub_agent("lighthouse", llm=None)
         assert callable(agent_fn)
 
-    def test_mock_returns_7_workflows(self):
+    def test_mock_returns_single_workflow(self):
+        """Per-workflow architecture: mock returns 1 workflow per call."""
         from agents.phase2_sub_agent import build_phase2_sub_agent
 
         agent_fn = build_phase2_sub_agent("prysm", llm=None)
-        result = agent_fn({"guards": [], "actions": [], "a_class_feedback": []})
+        result = agent_fn({
+            "guards": [], "actions": [], "a_class_feedback": [],
+            "current_workflow": "initial_sync", "client_lsgs": {},
+            "sparsity_hints": [],
+        })
 
         assert "client_lsgs" in result
         lsg = result["client_lsgs"]["prysm"]
         assert lsg["client"] == "prysm"
-        assert len(lsg["workflows"]) == 7
+        # Mock returns exactly 1 workflow per call
+        assert len(lsg["workflows"]) == 1
+        wf = lsg["workflows"][0]
+        assert wf["id"] == "initial_sync"
+        # Each mock workflow has init and done states
+        assert len(wf["states"]) == 2
+        assert wf["states"][0]["category"] == "init"
+        assert wf["states"][1]["category"] == "terminal"
 
-        # Each workflow has init and done states
-        for wf in lsg["workflows"]:
-            assert len(wf["states"]) == 2
-            assert wf["states"][0]["category"] == "init"
-            assert wf["states"][1]["category"] == "terminal"
-
-    def test_workflow_ids_match_config(self):
+    def test_each_workflow_can_be_extracted(self):
+        """Each workflow ID can be extracted individually."""
         from agents.phase2_sub_agent import build_phase2_sub_agent
 
         agent_fn = build_phase2_sub_agent("teku", llm=None)
-        result = agent_fn({"guards": [], "actions": [], "a_class_feedback": []})
-        lsg = result["client_lsgs"]["teku"]
-
-        wf_ids = {wf["id"] for wf in lsg["workflows"]}
-        assert wf_ids == set(_config.WORKFLOW_IDS)
-
-    def test_backfill_vocab_filters_to_referenced(self):
-        """_backfill_vocab populates guards/actions from global vocab, filtered."""
-        from agents.phase2_sub_agent import _backfill_vocab
-
-        lsg_dict = {
-            "client": "prysm",
-            "guards": [],
-            "actions": [],
-            "workflows": [{
-                "id": "initial_sync",
-                "states": [{
-                    "id": "initial_sync.init",
-                    "label": "Init",
-                    "category": "init",
-                    "transitions": [{
-                        "guard": "PeerAvailable",
-                        "actions": ["StartSync"],
-                        "next_state": "initial_sync.done",
-                    }],
-                }],
-            }],
-        }
-        global_guards = [
-            {"name": "PeerAvailable", "category": "net", "description": "x"},
-            {"name": "UnusedGuard", "category": "net", "description": "y"},
-        ]
-        global_actions = [
-            {"name": "StartSync", "category": "sync", "description": "x"},
-            {"name": "UnusedAction", "category": "misc", "description": "y"},
-        ]
-        _backfill_vocab(lsg_dict, global_guards, global_actions)
-        assert len(lsg_dict["guards"]) == 1
-        assert lsg_dict["guards"][0]["name"] == "PeerAvailable"
-        assert len(lsg_dict["actions"]) == 1
-        assert lsg_dict["actions"][0]["name"] == "StartSync"
-
-    def test_backfill_vocab_noop_if_already_populated(self):
-        """_backfill_vocab does nothing if guards/actions are already populated."""
-        from agents.phase2_sub_agent import _backfill_vocab
-
-        lsg_dict = {
-            "guards": [{"name": "G1"}],
-            "actions": [{"name": "A1"}],
-            "workflows": [],
-        }
-        _backfill_vocab(lsg_dict, [{"name": "X"}], [{"name": "Y"}])
-        # Should keep the original
-        assert len(lsg_dict["guards"]) == 1
-        assert lsg_dict["guards"][0]["name"] == "G1"
+        collected_ids = set()
+        for wf_id in _config.WORKFLOW_IDS:
+            result = agent_fn({
+                "guards": [], "actions": [], "a_class_feedback": [],
+                "current_workflow": wf_id, "client_lsgs": {},
+                "sparsity_hints": [],
+            })
+            lsg = result["client_lsgs"]["teku"]
+            collected_ids.add(lsg["workflows"][-1]["id"])
+        assert collected_ids == set(_config.WORKFLOW_IDS)
 
 
 # ── Phase 2 Main Agent ────────────────────────────────────────────────
@@ -203,11 +165,19 @@ class TestPhase2MainAgent:
         lsgs = {}
         for client in _config.CLIENT_NAMES:
             fn = build_phase2_sub_agent(client, llm=None)
-            r = fn({"guards": [], "actions": [], "a_class_feedback": []})
+            r = fn({
+                "guards": [], "actions": [], "a_class_feedback": [],
+                "current_workflow": "initial_sync", "client_lsgs": {},
+                "sparsity_hints": [],
+            })
             lsgs.update(r["client_lsgs"])
 
         main_fn = build_phase2_main_agent(llm=None)
-        result = main_fn({"client_lsgs": lsgs})
+        result = main_fn({
+            "client_lsgs": lsgs,
+            "current_workflow": "initial_sync",
+            "guards": [], "actions": [],
+        })
 
         assert result["logic_diff_rate"] == 0.0
         assert len(result["diff_report"]["b_class_diffs"]) == 0
@@ -218,10 +188,14 @@ class TestPhase2MainAgent:
         from agents.phase2_main_agent import build_phase2_main_agent
 
         lsgs = {}
-        # Only add 4 of 5 clients
+        # Only add 4 of 5 clients with mock workflow
         for client in _config.CLIENT_NAMES[:4]:
             fn = build_phase2_sub_agent(client, llm=None)
-            r = fn({"guards": [], "actions": [], "a_class_feedback": []})
+            r = fn({
+                "guards": [], "actions": [], "a_class_feedback": [],
+                "current_workflow": "initial_sync", "client_lsgs": {},
+                "sparsity_hints": [],
+            })
             lsgs.update(r["client_lsgs"])
 
         # Add 5th client with empty workflows (no matching transitions)
@@ -232,8 +206,12 @@ class TestPhase2MainAgent:
         }
 
         main_fn = build_phase2_main_agent(llm=None)
-        result = main_fn({"client_lsgs": lsgs})
+        result = main_fn({
+            "client_lsgs": lsgs,
+            "current_workflow": "initial_sync",
+            "guards": [], "actions": [],
+        })
 
-        # lodestar is missing transitions that others have → B-class diffs
+        # lodestar is missing the workflow entirely → B-class diffs
         assert result["logic_diff_rate"] > 0.0
         assert len(result["diff_report"]["b_class_diffs"]) > 0
