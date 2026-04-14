@@ -335,6 +335,9 @@ def build_phase2_main_agent(llm=None, callbacks=None):
                 b_diffs_out = []
                 for d in report.b_class_diffs:
                     dd = d.model_dump()
+                    # Normalize client names to lowercase (LLM may use "Lighthouse" vs "lighthouse")
+                    dd["involved_clients"] = [c.lower() for c in dd.get("involved_clients", [])]
+                    dd["deviating_clients"] = [c.lower() for c in dd.get("deviating_clients", [])]
                     # Infer deviating_clients from description if not set
                     if not dd.get("deviating_clients"):
                         dd["deviating_clients"] = _infer_deviating_clients(dd)
@@ -344,6 +347,10 @@ def build_phase2_main_agent(llm=None, callbacks=None):
                 # Backfill evidence from client LSGs for diffs missing it
                 _backfill_evidence_from_lsgs(b_diffs_out, client_lsgs)
                 a_diffs_out = [d.model_dump() for d in report.a_class_diffs]
+                # Normalize client names in A-class diffs too
+                for ad in a_diffs_out:
+                    ad["involved_clients"] = [c.lower() for c in ad.get("involved_clients", [])]
+                    ad["deviating_clients"] = [c.lower() for c in ad.get("deviating_clients", [])]
                 _backfill_evidence_from_lsgs(a_diffs_out, client_lsgs)
                 return {
                     "diff_report": {

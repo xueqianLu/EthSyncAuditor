@@ -42,11 +42,23 @@ Within aligned state groups, compare transitions. A-class = same logic, differen
 
 For each B-class diff, provide ALL fields:
 - `workflow_id`, `state_id`, `transition_guard`
-- `description`: What is different and in which clients
-- `involved_clients`: ALL clients in this comparison
-- `deviating_clients`: MINORITY clients whose behavior differs
+- `description`: What is different and in which clients. **Be specific** — name the exact
+  guards/actions that differ, not just vague statements. Say "Lighthouse uses X, while
+  Prysm, Teku, and Lodestar use Y" rather than "some clients differ".
+- `involved_clients`: ALL clients in this comparison (typically all 5)
+- `deviating_clients`: MINORITY clients whose behavior differs from the majority.
+  **IMPORTANT**: This must be the smaller group. If 3 clients do X and 2 do Y, the
+  deviating clients are the 2. If only 1 client does something unique, it is the sole
+  deviating client.
 - `severity`: CRITICAL / MAJOR / MINOR
 - `security_note`: How this divergence could be exploited
+
+#### Avoiding False Positives
+
+Before reporting a B-class diff, verify:
+1. The difference is **structural** (different control flow), not just **naming** (same logic, different names)
+2. The claimed "missing" feature is truly absent, not just modeled differently or in another state
+3. The description accurately reflects ALL clients — do not claim "only X does this" if multiple clients do it
 
 #### Severity Criteria
 

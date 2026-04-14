@@ -224,16 +224,21 @@ def _per_client_ranking(
     The ranking is sorted by ``b_class_deviating`` (descending), then by
     ``total`` as tiebreaker.
     """
+    # Normalize client name to lowercase to prevent case-variant duplicates
+    # (e.g., LLM may output "Lighthouse" vs config's "lighthouse").
+    def _norm(name: str) -> str:
+        return name.lower()
+
     client_a: Counter = Counter()
     client_b: Counter = Counter()       # total involvement
     client_b_dev: Counter = Counter()   # deviating involvement only
     for d in a_diffs:
         for c in d.get("involved_clients", []):
-            client_a[c] += 1
+            client_a[_norm(c)] += 1
     for d in b_diffs:
-        deviating = d.get("deviating_clients", [])
+        deviating = [_norm(c) for c in d.get("deviating_clients", [])]
         for c in d.get("involved_clients", []):
-            client_b[c] += 1
+            client_b[_norm(c)] += 1
         # If deviating_clients was populated, use it; otherwise fall back
         # to counting all involved (legacy / LLM-generated diffs).
         if deviating:
@@ -241,9 +246,9 @@ def _per_client_ranking(
                 client_b_dev[c] += 1
         else:
             for c in d.get("involved_clients", []):
-                client_b_dev[c] += 1
+                client_b_dev[_norm(c)] += 1
 
-    all_clients = sorted(set(client_a.keys()) | set(client_b.keys()) | set(CLIENT_NAMES))
+    all_clients = sorted(set(client_a.keys()) | set(client_b.keys()) | set(_norm(c) for c in CLIENT_NAMES))
     rows: list[dict] = []
     for c in all_clients:
         a = client_a.get(c, 0)
@@ -729,11 +734,22 @@ def write_diff_report(state: dict[str, Any]) -> Path:
         lines.extend([
             "## Iteration Trend",
             "",
-            "| Iter | A-class | B-class | Logic Diff Rate |",
-            "|------|---------|---------|-----------------|",
+            "| Workflow | Iter | A-class | B-class | Logic Diff Rate |",
+            "|----------|------|---------|---------|-----------------|",
         ])
+        # Group iterations by workflow for readability
+        current_wf = ""
         for h in iteration_history:
+            wf = h.get("workflow", "")
+            # Insert a separator row when the workflow changes
+            if wf != current_wf:
+                if current_wf:
+                    lines.append(
+                        "| | | | | |"
+                    )
+                current_wf = wf
             lines.append(
+                f"| `{wf}` "
                 f"| {h.get('iteration', '?')} "
                 f"| {h.get('a_class_count', '?')} "
                 f"| {h.get('b_class_count', '?')} "

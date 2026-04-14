@@ -69,6 +69,102 @@ def _serialize_workflow_yaml(wf: dict) -> str:
     return yaml.dump(wf_copy, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
+# Maximum total characters of code context injected into the prompt.
+_MAX_CODE_CONTEXT_CHARS: int = 12_000
+_MAX_SNIPPETS: int = 15
+
+
+def _retrieve_code_context(
+    client_name: str,
+    workflow_id: str,
+    iteration: int,
+    prev_wf: dict | None,
+) -> list[dict[str, str]]:
+    """Retrieve relevant source-code snippets via call-graph directed search.
+
+    Returns a list of ``{"file", "function", "lines", "code"}`` dicts that
+    will be injected into the Sub-Agent prompt so the LLM can ground its
+    LSG extraction in actual source code — not hallucinate it.
+
+    On iteration > 1, also searches for guard/action names from the
+    previous workflow to help verify and refine them.
+    """
+    try:
+        from tools.search import search_codebase_by_workflow
+    except ImportError:
+        logger.debug("[_retrieve_code_context] search tools not available")
+        return []
+
+    snippets: list[dict[str, str]] = []
+    seen_keys: set[str] = set()
+    total_chars = 0
+
+    def _add(results: list) -> None:
+        nonlocal total_chars
+        for r in results:
+            key = f"{r.metadata.get('qualified_name', '')}:{r.metadata.get('start_line', 0)}"
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            code = (r.content or "")[:800]  # cap each snippet
+            if total_chars + len(code) > _MAX_CODE_CONTEXT_CHARS:
+                return
+            snippets.append({
+                "file": r.metadata.get("file_path", ""),
+                "function": r.metadata.get("function_name", ""),
+                "lines": f"{r.metadata.get('start_line', '?')}–{r.metadata.get('end_line', '?')}",
+                "code": code,
+            })
+            total_chars += len(code)
+
+    # ── Primary search: workflow entry points + workflow name ───────────
+    try:
+        results = search_codebase_by_workflow(
+            workflow_id=workflow_id,
+            query=workflow_id.replace("_", " "),
+            client_name=client_name,
+            top_k=10,
+        )
+        _add(results)
+    except Exception:
+        logger.debug("[_retrieve_code_context] primary search failed", exc_info=True)
+
+    # ── Secondary search: guard/action names from previous iteration ───
+    if prev_wf and iteration > 1:
+        # Collect unique guard and action names from the previous workflow
+        terms: set[str] = set()
+        for st in prev_wf.get("states", []):
+            for tr in st.get("transitions", []):
+                g = tr.get("guard", "")
+                if g and g != "TRUE":
+                    terms.add(g)
+                for a in tr.get("actions", []):
+                    if a:
+                        terms.add(a)
+        # Search for a sample of these terms to verify/refine
+        for term in list(terms)[:6]:
+            if total_chars >= _MAX_CODE_CONTEXT_CHARS:
+                break
+            try:
+                results = search_codebase_by_workflow(
+                    workflow_id=workflow_id,
+                    query=term,
+                    client_name=client_name,
+                    top_k=3,
+                )
+                _add(results)
+            except Exception:
+                pass
+
+    if snippets:
+        logger.info(
+            "[_retrieve_code_context] client=%s wf=%s — retrieved %d "
+            "snippets (%d chars)",
+            client_name, workflow_id, len(snippets), total_chars,
+        )
+    return snippets[:_MAX_SNIPPETS]
+
+
 def build_phase2_sub_agent(client_name: str, llm=None, callbacks=None):
     """Build a Phase 2 Sub-Agent for *client_name*.
 
@@ -123,6 +219,13 @@ def build_phase2_sub_agent(client_name: str, llm=None, callbacks=None):
             and h.get("workflow_id") == current_wf
         ]
 
+        # ── RAG: retrieve relevant code snippets for this workflow ──────
+        code_snippets: list[dict[str, str]] = []
+        if llm is not None:
+            code_snippets = _retrieve_code_context(
+                client_name, current_wf, iteration, prev_wf,
+            )
+
         template = _load_prompt_template()
         _prompt = template.render(
             client_name=client_name,
@@ -133,6 +236,7 @@ def build_phase2_sub_agent(client_name: str, llm=None, callbacks=None):
             previous_wf_yaml=previous_wf_yaml,
             iteration=iteration,
             sparsity_hints=sparsity_hints,
+            code_snippets=code_snippets,
         )
 
         if llm is not None:

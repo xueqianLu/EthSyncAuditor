@@ -37,3 +37,4 @@ code/
 
 # Test artifacts
 .pytest_cache/
+results

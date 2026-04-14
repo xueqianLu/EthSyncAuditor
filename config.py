@@ -34,8 +34,8 @@ B_CLASS_CHANGE_THRESHOLD: int = 1  # max allowed B-class count change per iter
 # pass checks whether the reported B-class diffs are genuine by searching
 # the source code of deviating clients.
 VERIFY_ENABLED: bool = True          # Set False to skip verification entirely
-VERIFY_SEARCH_TOP_K: int = 15       # code snippets per search query
-VERIFY_CONFIDENCE_THRESHOLD: float = 0.6  # below this → flag for human review
+VERIFY_SEARCH_TOP_K: int = 20       # code snippets per search query (increased for better coverage)
+VERIFY_CONFIDENCE_THRESHOLD: float = 0.5  # below this → flag for human review
 
 # ── Client names (order used everywhere) ────────────────────────────────
 CLIENT_NAMES: list[str] = [

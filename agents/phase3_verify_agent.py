@@ -83,8 +83,27 @@ class VerifyMainResult(BaseModel):
 # ────────────────────────────────────────────────────────────────────────
 
 
+def _extract_identifiers_from_text(text: str) -> list[str]:
+    """Extract PascalCase/camelCase/snake_case identifiers from free text.
+
+    Finds tokens like 'HandleInvalidPayloadStatus', 'InvalidateDescendants',
+    'engine_forkchoice_updated', etc. that are likely code-level names.
+    """
+    import re
+    # Match identifiers with ≥2 sub-words (PascalCase, camelCase, or snake_case)
+    pascal_camel = re.findall(r"\b[A-Z][a-zA-Z0-9]{5,}\b", text)
+    snake = re.findall(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+){1,}\b", text)
+    # Also match quoted identifiers like 'FooBar' or `FooBar`
+    quoted = re.findall(r"['\"`]([A-Za-z_][A-Za-z0-9_]{4,})['\"`]", text)
+    return pascal_camel + snake + quoted
+
+
 def _build_search_queries(diff: dict) -> list[str]:
-    """Extract search queries from a B-class diff for code search."""
+    """Extract search queries from a B-class diff for code search.
+
+    Enhanced version that also mines the description and security_note
+    for code-level identifiers (function names, guard names, action names).
+    """
     queries: list[str] = []
 
     guard = diff.get("transition_guard", "")
@@ -92,6 +111,16 @@ def _build_search_queries(diff: dict) -> list[str]:
         queries.append(guard)
 
     desc = diff.get("description", "")
+    sec_note = diff.get("security_note", "")
+    combined_text = f"{desc} {sec_note}"
+
+    # ── Extract code-level identifiers from description & security_note ──
+    identifiers = _extract_identifiers_from_text(combined_text)
+    for ident in identifiers:
+        if ident not in queries:
+            queries.append(ident)
+
+    # ── Domain-specific keyword matching ─────────────────────────────────
     for term in [
         "backfill", "optimistic", "checkpoint", "slashing",
         "fork choice", "forkchoice", "circuit breaker",
@@ -100,8 +129,13 @@ def _build_search_queries(diff: dict) -> list[str]:
         "payload", "new_payload", "forkchoice_updated",
         "reorg", "reorganize", "rollback",
         "builder", "mev", "external signer",
+        "equivocation", "equivocating",
+        "attestation", "aggregate", "sync committee",
+        "transition configuration", "exchange capabilities",
+        "halt", "disconnect", "reconnect",
+        "selection proof", "aggregator",
     ]:
-        if term.lower() in desc.lower():
+        if term.lower() in combined_text.lower():
             queries.append(term)
 
     state_id = diff.get("state_id", "")
@@ -114,6 +148,11 @@ def _build_search_queries(diff: dict) -> list[str]:
     if wf_id and guard and guard not in ("*", "TRUE"):
         queries.append(f"{wf_id} {guard}")
 
+    # ── Also search for action names mentioned in the diff ───────────────
+    for action in diff.get("actions", []):
+        if action and action not in queries:
+            queries.append(action)
+
     # Deduplicate preserving order
     seen: set[str] = set()
     unique: list[str] = []
@@ -122,7 +161,7 @@ def _build_search_queries(diff: dict) -> list[str]:
         if ql not in seen:
             seen.add(ql)
             unique.append(q)
-    return unique[:5]
+    return unique[:8]  # Increased from 5 to 8 for better coverage
 
 
 # ────────────────────────────────────────────────────────────────────────

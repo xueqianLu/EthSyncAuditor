@@ -204,13 +204,33 @@ Do NOT copy or force-fit skeleton examples from the LSG Spec.
 - **Completeness over conformity**: If {{ client_name }} has a unique step, include it.
 - **Evidence is mandatory**: Every transition MUST have evidence (file, function, line range).
 
+{% if code_snippets %}
+## Source Code Context ({{ code_snippets | length }} snippets from {{ client_name }})
+
+The following code snippets were retrieved from {{ client_name }}'s source code for the
+**{{ workflow_id }}** workflow. Use them to derive your state machine — do NOT invent
+states or transitions that are not supported by this code or other code you know about.
+
+{% for snippet in code_snippets %}
+### {{ snippet.function }} — `{{ snippet.file }}` L{{ snippet.lines }}
+```{{ language }}
+{{ snippet.code }}
+```
+
+{% endfor %}
+{% endif %}
+
 {% if a_class_feedback %}
 ## A-Class Vocabulary Alignment Feedback
 
-Rename the following to match the unified vocabulary (do NOT restructure):
+The following renames were identified in the previous iteration. Apply them precisely
+to align your output with the unified vocabulary. Do NOT restructure the state machine —
+only rename the specified guards/actions to their canonical equivalents.
 
 {% for fb in a_class_feedback %}
-- **{{ fb.workflow_id }}** → state `{{ fb.state_id }}`, guard `{{ fb.transition_guard }}`: {{ fb.description }}
+- **{{ fb.workflow_id }}** → state `{{ fb.state_id }}`, guard `{{ fb.transition_guard }}`:
+  {{ fb.description }}
+  {% if fb.involved_clients and client_name in fb.involved_clients %}⚠️ **This applies to {{ client_name }}** — apply this rename in your output.{% endif %}
 {% endfor %}
 {% endif %}
 
