@@ -53,6 +53,52 @@ For each B-class diff, provide ALL fields:
 - `severity`: CRITICAL / MAJOR / MINOR
 - `security_note`: How this divergence could be exploited
 
+### Step 3.5 — Identify C-Class Diffs (Consensus-Impacting Vulnerabilities)
+
+Beyond cross-client divergences, actively search for **vulnerabilities that could break
+consensus** — bugs or weaknesses present in individual clients (or shared across clients)
+that an adversary could exploit. Report these as B-class diffs with severity CRITICAL and
+a `security_note` prefixed with `[CONSENSUS VULN]`.
+
+**Vulnerability Patterns to Look For:**
+
+1. **Validation Gaps**: Is any client missing a validation step that others perform?
+   Example: One client doesn't verify BLS signatures on gossip attestations before
+   fork-choice weight update → attacker can manipulate fork-choice with fake attestations.
+
+2. **Ordering & Atomicity Bugs**: Does any client perform steps in a dangerous order?
+   Example: Updating fork-choice BEFORE checking execution payload validity → brief
+   window where invalid chain is canonical.
+
+3. **Consensus-Critical Edge Cases**:
+   - Epoch boundary: Does state transition happen before or after processing the boundary block?
+   - Empty slots: Are skipped slots handled consistently in slot processing and attestation?
+   - Reorg depth: Is there a maximum reorg depth? What if a reorg crosses a finalized checkpoint?
+   - Genesis/anchor block: Are special cases for slot 0 / the anchor block handled?
+
+4. **Specification Deviation**: Does any client deviate from the eth2 spec in a way that
+   could cause it to accept blocks that other clients reject (or vice versa)?
+   - `process_block` / `state_transition` differences
+   - `get_head` / fork-choice rule differences
+   - `is_valid_indexed_attestation` differences
+
+5. **Network-Level Consensus Attacks**:
+   - Can time manipulation (NTP spoofing) cause a client to accept/reject different blocks?
+   - Can bandwidth exhaustion cause a client to fall behind and fork?
+   - Can carefully timed gossip messages exploit proposer boost for chain splits?
+
+6. **Cross-Layer (CL↔EL) Consensus Risks**:
+   - Can a malicious EL response (`INVALID` with wrong `latestValidHash`) cause the CL to
+     invalidate the correct chain and fork from the honest majority?
+   - Can a stalled EL cause the CL to miss finality (no `forkchoiceUpdated` → no new payload)?
+
+**How to Report:**
+- Use `severity: CRITICAL` for all consensus vulnerabilities
+- Prefix `security_note` with `[CONSENSUS VULN]`
+- In `description`, explain: (1) what the vulnerability is, (2) which client(s) are affected,
+  (3) what the attack scenario looks like, (4) what the expected vs actual behavior is
+- Set `deviating_clients` to the affected client(s)
+
 #### Avoiding False Positives
 
 Before reporting a B-class diff, verify:

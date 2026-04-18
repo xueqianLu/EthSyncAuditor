@@ -134,6 +134,15 @@ def _build_search_queries(diff: dict) -> list[str]:
         "transition configuration", "exchange capabilities",
         "halt", "disconnect", "reconnect",
         "selection proof", "aggregator",
+        # Consensus vulnerability terms
+        "race condition", "mutex", "lock", "rwlock", "atomic",
+        "validate", "verify_signature", "bls_verify",
+        "overflow", "underflow", "saturating",
+        "rate limit", "throttle", "max_size", "bounded",
+        "latest_valid_hash", "invalid_block_root",
+        "is_valid_indexed_attestation", "process_block",
+        "state_transition", "get_head", "compute_domain",
+        "slashing_protection", "signing_root",
     ]:
         if term.lower() in combined_text.lower():
             queries.append(term)

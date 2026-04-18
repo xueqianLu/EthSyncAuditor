@@ -204,6 +204,70 @@ Do NOT copy or force-fit skeleton examples from the LSG Spec.
 - **Completeness over conformity**: If {{ client_name }} has a unique step, include it.
 - **Evidence is mandatory**: Every transition MUST have evidence (file, function, line range).
 
+### 🔍 CONSENSUS VULNERABILITY ANALYSIS
+
+Beyond extracting the normal state machine, you MUST actively hunt for **consensus-impacting
+vulnerabilities** in {{ client_name }}'s {{ workflow_id }} implementation. These are NOT
+cross-client differences — they are **bugs or weaknesses in THIS client** that could cause
+consensus failures, chain splits, or safety violations regardless of what other clients do.
+
+**Vulnerability Categories to Investigate:**
+
+1. **Missing or Insufficient Validation**
+   - Is signature verification (BLS) skipped or deferred in any code path?
+   - Are state transition checks (slot, epoch, proposer index) complete?
+   - Can malformed or oversized messages bypass validation and crash the node?
+   - Are there integer overflow/underflow risks in slot/epoch arithmetic?
+
+2. **Race Conditions & Concurrency Bugs**
+   - Can concurrent block imports produce inconsistent fork-choice state?
+   - Are shared data structures (fork-choice store, attestation pool, peer DB)
+     protected against data races?
+   - Can two goroutines/tasks process the same block simultaneously?
+   - Is there a TOCTOU (time-of-check-time-of-use) gap between validation and import?
+
+3. **Denial-of-Service (DoS) Vectors**
+   - Can an attacker trigger unbounded memory allocation (e.g., large attestation lists,
+     unlimited pending blocks, unbounded orphan queues)?
+   - Are there CPU-intensive operations (BLS verification, state transition) that can be
+     triggered cheaply by an attacker?
+   - Can a malicious peer cause the node to enter an infinite retry loop?
+   - Is there proper rate limiting on gossip message processing?
+
+4. **Fork-Choice & Finality Safety**
+   - Can a crafted sequence of blocks cause the fork-choice to select an invalid chain?
+   - Is proposer boost correctly time-bounded (only within the first 4 seconds)?
+   - Can an attacker delay attestation delivery to manipulate fork-choice weights?
+   - Are equivocating (double) blocks/attestations correctly detected and handled?
+   - Can an unrealized justified/finalized checkpoint cause incorrect pruning?
+
+5. **Execution Layer (Engine API) Safety**
+   - Can a malicious or buggy EL cause the CL to accept an INVALID block?
+   - Is `INVALID` → `latestValidHash` cascade implemented correctly? Could a wrong
+     `latestValidHash` cause valid blocks to be incorrectly invalidated?
+   - Can a `SYNCING` status be exploited to keep the node permanently optimistic?
+   - Is there a timeout for Engine API calls? Can a stalled EL freeze CL processing?
+
+6. **Cryptographic & Slashing Safety**
+   - Is the slashing protection database always checked BEFORE signing?
+   - Can a crash between signing and recording to the slashing DB cause a double vote/proposal?
+   - Are BLS aggregation operations (aggregate verify, fast aggregate verify) used correctly?
+   - Is the domain separation (compute_domain) correct for all signature types?
+
+7. **State Corruption & Persistence**
+   - Can a crash during state write leave the database in an inconsistent state?
+   - Is the hot/cold state split correct — can archival states be incorrectly pruned?
+   - Can a checkpoint state be loaded from a corrupted or truncated DB entry?
+   - Are justified/finalized checkpoints persisted atomically with the blocks they reference?
+
+**How to Model Vulnerabilities in LSG:**
+- Add **error/vulnerability states** with prefix `<workflow>.vuln_*` (e.g., `initial.vuln_race_import`)
+- Use descriptive guards like `RaceConditionOnForkChoice`, `MissingBLSVerification`,
+  `UnboundedMemoryAllocation`, `TocTouValidationGap`
+- Use descriptive actions like `ExploitConcurrentImport`, `TriggerOOM`, `BypassValidation`
+- Set the transition's `evidence` to the exact file/function/line where the vulnerability exists
+- In the state's `label`, prefix with `[VULN]` to distinguish from normal states
+
 {% if code_snippets %}
 ## Source Code Context ({{ code_snippets | length }} snippets from {{ client_name }})
 

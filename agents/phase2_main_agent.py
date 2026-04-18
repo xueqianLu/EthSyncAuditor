@@ -155,6 +155,10 @@ def _classify_severity(diff: dict) -> str:
     sec_note = (diff.get("security_note", "") or "").lower()
     combined = desc_lower + " " + sec_note
 
+    # ── CONSENSUS VULN tag → always CRITICAL ────────────────────────────
+    if "[consensus vuln]" in sec_note:
+        return "CRITICAL"
+
     # ── CRITICAL indicators ─────────────────────────────────────────────
     # Entire workflow missing / stub
     if state_id.endswith(".*") or "stub" in desc_lower or "missing workflow" in desc_lower:
@@ -166,6 +170,16 @@ def _classify_severity(diff: dict) -> str:
     critical_guard_keywords = [
         "slashable", "slashing", "weak subjectivity", "finality",
         "accepts", "rejects", "consensus split", "consensus failure",
+        # Consensus vulnerability patterns
+        "race condition", "data race", "toctou", "time-of-check",
+        "missing validation", "bypass validation", "skip verification",
+        "missing bls", "signature not verified", "unsigned",
+        "double vote", "double proposal", "equivocation",
+        "invalid chain", "incorrect invalidation", "wrong latestvali",
+        "state corruption", "inconsistent state", "atomicity",
+        "unbounded allocation", "oom", "out of memory",
+        "infinite loop", "infinite retry",
+        "fork from honest", "chain split",
     ]
     if any(kw in combined for kw in critical_guard_keywords):
         return "CRITICAL"

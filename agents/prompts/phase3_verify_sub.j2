@@ -39,4 +39,11 @@ For each diff, analyze code evidence and determine:
 - **PARTIAL**: Incomplete implementation compared to reference
 - **DIFFERENT_LOCATION**: Feature exists in different module/workflow
 
+**For diffs marked `[CONSENSUS VULN]` in security_note, apply stricter verification:**
+- Look for the specific code pattern described (missing validation, race condition, etc.)
+- Check if there are mitigations elsewhere (e.g., validation at a different layer)
+- Verify the attack scenario is actually reachable — are there guards upstream that prevent it?
+- If the vulnerability exists but has partial mitigation, report as **PARTIAL**
+- Provide the exact code path (file, function, line) where the vulnerability manifests
+
 Return a `VerifySubResult` with `client_name` = "{{ client_name }}".

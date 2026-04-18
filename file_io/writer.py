@@ -425,6 +425,7 @@ def _generate_executive_summary(
     sev_counts = Counter(d.get("severity", "MAJOR") for d in b_diffs)
     n_critical = sev_counts.get("CRITICAL", 0)
     n_major = sev_counts.get("MAJOR", 0)
+    n_vuln = sum(1 for d in b_diffs if "[consensus vuln]" in (d.get("security_note", "") or "").lower())
 
     parts: list[str] = []
 
@@ -435,6 +436,12 @@ def _generate_executive_summary(
         f"**{total_a}** A-class (vocabulary/naming, auto-resolved) "
         f"and **{total_b}** B-class (structural logic divergences)."
     )
+
+    if n_vuln > 0:
+        parts.append(
+            f"🚨 **{n_vuln} consensus-impacting vulnerabilities** were identified "
+            f"that could cause chain splits, finality failures, or safety violations."
+        )
 
     if n_critical > 0 or n_major > 0:
         parts.append(
@@ -541,6 +548,7 @@ def write_diff_report(state: dict[str, Any]) -> Path:
     # ── 2. Summary Table ───────────────────────────────────────────────
     # Count B-class by severity
     sev_counts = Counter(d.get("severity", "MAJOR") for d in b_diffs)
+    n_vuln = sum(1 for d in b_diffs if "[consensus vuln]" in (d.get("security_note", "") or "").lower())
     lines.extend([
         "## Summary",
         "",
@@ -551,6 +559,7 @@ def write_diff_report(state: dict[str, Any]) -> Path:
         f"| — 🔴 CRITICAL | {sev_counts.get('CRITICAL', 0)} |",
         f"| — 🟠 MAJOR | {sev_counts.get('MAJOR', 0)} |",
         f"| — 🟡 MINOR | {sev_counts.get('MINOR', 0)} |",
+        f"| 🚨 Consensus Vulnerabilities | {n_vuln} |",
         f"| Total diffs | {len(a_diffs) + len(b_diffs)} |",
         f"| Workflows with full agreement | {len(agreement_wfs)} |",
         "",
@@ -643,6 +652,59 @@ def write_diff_report(state: dict[str, Any]) -> Path:
 
     # ── 6. B-Class Structural Logic Differences (by severity) ──────────
     if b_diffs:
+        # Separate consensus vulnerabilities from cross-client divergences
+        vuln_diffs = [d for d in b_diffs if "[consensus vuln]" in (d.get("security_note", "") or "").lower()]
+        divergence_diffs = [d for d in b_diffs if "[consensus vuln]" not in (d.get("security_note", "") or "").lower()]
+
+        # ── 6a. Consensus Vulnerabilities ──────────────────────────────
+        if vuln_diffs:
+            lines.extend([
+                "## 🚨 Consensus-Impacting Vulnerabilities",
+                "",
+                "These are **potential vulnerabilities** in individual client "
+                "implementations that could cause consensus failures, chain splits, "
+                "or safety violations. They require **urgent investigation**.",
+                "",
+                f"| Total Consensus Vulnerabilities | {len(vuln_diffs)} |",
+                "|---|---|",
+                "",
+            ])
+            v_idx = 1
+            for diff in vuln_diffs:
+                lines.append(
+                    f"#### VULN-{v_idx}: {diff.get('workflow_id', '?')} / "
+                    f"{diff.get('state_id', '?')}"
+                )
+                lines.append("")
+                lines.append(f"- **Guard**: `{diff.get('transition_guard', '?')}`")
+                deviating = diff.get("deviating_clients", [])
+                if deviating:
+                    lines.append(
+                        f"- **Affected client(s)**: "
+                        f"{', '.join(deviating)}"
+                    )
+                lines.append(f"- **Description**: {diff.get('description', '')}")
+                sec_note = diff.get("security_note", "")
+                if sec_note:
+                    lines.append(f"- **⚠️ Security Note**: {sec_note}")
+                # Verification status
+                vstatus = diff.get("verification_status", "")
+                if vstatus:
+                    lines.append(f"- **Verification**: {vstatus}")
+                evidence = diff.get("evidence", {})
+                if evidence:
+                    lines.append("- **Evidence**:")
+                    for client, ev in evidence.items():
+                        if ev:
+                            lines.append(
+                                f"  - {client}: `{ev.get('file', '?')}` → "
+                                f"`{ev.get('function', '?')}` "
+                                f"L{ev.get('lines', [])}"
+                            )
+                lines.append("")
+                v_idx += 1
+
+        # ── 6b. Cross-Client Structural Logic Differences ──────────────
         lines.extend([
             "## B-Class Structural Logic Differences",
             "",
@@ -659,7 +721,7 @@ def write_diff_report(state: dict[str, Any]) -> Path:
         ]
         b_idx = 1
         for sev_key, sev_label in severity_order:
-            sev_diffs = [d for d in b_diffs if d.get("severity") == sev_key]
+            sev_diffs = [d for d in divergence_diffs if d.get("severity") == sev_key]
             if not sev_diffs:
                 continue
             lines.extend([
